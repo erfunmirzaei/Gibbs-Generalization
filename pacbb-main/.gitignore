@@ -1,0 +1,14 @@
+# env
+conda_env
+# cache
+.idea
+__pycache__/
+.DS_Store
+# data
+data/
+outputs/
+# logs
+/logs/
+/wandb/
+# other
+/dev_scripts/
