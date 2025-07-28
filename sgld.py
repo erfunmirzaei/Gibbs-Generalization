@@ -81,12 +81,20 @@ class SGLD(optimizer.Optimizer):
                 # Langevin noise scaled by inverse temperature: N(0, 1) / sqrt(lr * beta)
                 # Handle beta = 0 case to avoid division by zero
                 if beta > 0:
-                    langevin_noise = param.data.new(param.data.size()).normal_(
-                        mean=0, std=1) / np.sqrt(param_group['lr'] * beta)
+                    # Use device-appropriate noise generation for better GPU performance
+                    if param.data.is_cuda:
+                        langevin_noise = torch.cuda.FloatTensor(param.data.size()).normal_(
+                            mean=0, std=1) / np.sqrt(param_group['lr'] * beta)
+                    else:
+                        langevin_noise = param.data.new(param.data.size()).normal_(
+                            mean=0, std=1) / np.sqrt(param_group['lr'] * beta)
                     param.data.add_(0.5*gradient + langevin_noise, alpha=-param_group['lr'])
                 else:
-                    # When beta = 0, no noise is added (pure langevin noise)
-                    langevin_noise = param.data.new(param.data.size()).normal_(mean=0, std=1) 
+                    # When beta = 0, no noise is added (pure gradient descent)
+                    if param.data.is_cuda:
+                        langevin_noise = torch.cuda.FloatTensor(param.data.size()).normal_(mean=0, std=1)
+                    else:
+                        langevin_noise = param.data.new(param.data.size()).normal_(mean=0, std=1)
                     param.data.add_(langevin_noise, alpha=-param_group['lr'])
             else: # don't add noise
                 param.data.add_(0.5*gradient, alpha=-param_group['lr'])

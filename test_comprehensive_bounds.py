@@ -40,8 +40,10 @@ def test_comprehensive_bounds_behavior():
     
     try:
         # These should work - bounds function handles beta=0 internally
-        bounds_bce = compute_generalization_bound(original_beta_values, results, loss_type='bce')
-        bounds_01 = compute_generalization_bound(original_beta_values, results, loss_type='zero_one')
+        # For SYNTH dataset, default training set size is 50
+        n_train = 50  # Default SYNTH dataset size
+        bounds_bce = compute_generalization_bound(original_beta_values, results, n_train, loss_type='bce')
+        bounds_01 = compute_generalization_bound(original_beta_values, results, n_train, loss_type='zero_one')
         gen_errors = compute_generalization_errors(original_beta_values, results)
         
         print(f"✓ BCE bounds computed for: {sorted(bounds_bce.keys())}")
@@ -103,8 +105,10 @@ def test_comprehensive_bounds_behavior():
     
     try:
         filename = "results/test_bounds_behavior.txt"
+        n_train = 50  # Default SYNTH dataset size
         save_results_to_file(
             results=results,
+            n=n_train,
             filename=filename,
             beta_values=original_beta_values,
             num_repetitions=3,

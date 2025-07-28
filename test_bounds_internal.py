@@ -31,10 +31,11 @@ def test_bounds_internal_beta_zero():
     
     try:
         # This should work - bounds function handles beta=0 internally
-        bounds = compute_generalization_bound(original_beta_values, results, loss_type='bce')
+        n_train = 50  # Default SYNTH dataset size
+        bounds = compute_generalization_bound(original_beta_values, results, n_train, loss_type='bce')
         print(f"✓ BCE bounds computed successfully for betas: {sorted(bounds.keys())}")
         
-        zero_one_bounds = compute_generalization_bound(original_beta_values, results, loss_type='zero_one')
+        zero_one_bounds = compute_generalization_bound(original_beta_values, results, n_train, loss_type='zero_one')
         print(f"✓ Zero-one bounds computed successfully for betas: {sorted(zero_one_bounds.keys())}")
         
         gen_errors = compute_generalization_errors(original_beta_values, results)
@@ -92,7 +93,8 @@ def test_bounds_without_beta_zero():
     }
     
     try:
-        bounds = compute_generalization_bound([0.1, 0.2], fake_results, loss_type='bce')
+        n_train = 50  # Test training set size
+        bounds = compute_generalization_bound([0.1, 0.2], fake_results, n_train, loss_type='bce')
         print("✗ Expected error but bounds computation succeeded")
         return False
     except ValueError as e:

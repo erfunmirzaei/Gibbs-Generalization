@@ -8,6 +8,7 @@ experiments across different beta values with multiple repetitions.
 import numpy as np
 import torch
 import torch.optim as optim
+import time
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
 from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
 from sgld import SGLD
@@ -62,6 +63,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     # criterion = TangentLoss()
     zero_one_criterion = ZeroOneLoss()
     
+
     # Check if we're using BCE for optimization (to determine if transformation is needed)
     using_bce_for_optimization = isinstance(criterion, BoundedCrossEntropyLoss)
     
@@ -81,7 +83,10 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     learning_rates = []
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
-    print(f"Dataset type: {dataset_type}")
+    print(f"Dataset type: {dataset_type}, Device: {device}")
+    
+    # Progress tracking
+    start_time = time.time()
     
     for epoch in range(num_epochs):
         # Training phase
@@ -92,46 +97,34 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         train_total = 0
         
         for batch_x, batch_y in train_loader:
-            batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+            # Use non_blocking=True for faster GPU transfer
+            batch_x = batch_x.to(device, non_blocking=True)
+            batch_y = batch_y.to(device, non_blocking=True)
             
-            optimizer.zero_grad()
+            # Use more efficient zero_grad
+            optimizer.zero_grad(set_to_none=True)
+            
+            # Standard precision training
             outputs = model(batch_x)
             
             # Handle different output shapes for SYNTH vs MNIST
             if dataset_type == 'synth':
-                # For SYNTH: single output, convert to binary classification
                 loss_for_optimization = criterion(outputs, batch_y)
-                
-                # For recording: use transformed loss if BCE is used for optimization, otherwise use raw loss
                 if using_bce_for_optimization:
-                    # BCE is used for optimization, apply transformation for recording
                     loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                 else:
-                    # TangentLoss is used for optimization, use it directly for recording (no transformation needed)
                     loss_for_recording = loss_for_optimization
-                
-                # Training accuracy for SYNTH
                 predicted = (outputs.squeeze() > 0).float()
-                # Zero-one loss for training
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
             else:
-                # For MNIST: binary classification (classes 0 and 1)
                 loss_for_optimization = criterion(outputs, batch_y)
-                
-                # For recording: use transformed loss if BCE is used for optimization, otherwise use raw loss
                 if using_bce_for_optimization:
-                    # BCE is used for optimization, apply transformation for recording
                     loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                 else:
-                    # TangentLoss is used for optimization, use it directly for recording (no transformation needed)
                     loss_for_recording = loss_for_optimization
-                
-                # Training accuracy for MNIST binary
                 predicted = (outputs.squeeze() > 0).float()
-                # Zero-one loss for training
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
             
-            # Backprop using the optimization loss (could be BCE or TangentLoss)
             loss_for_optimization.backward()
             optimizer.step()
             
@@ -162,40 +155,26 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         
         with torch.no_grad():
             for batch_x, batch_y in test_loader:
-                batch_x, batch_y = batch_x.to(device), batch_y.to(device)
+                batch_x = batch_x.to(device, non_blocking=True)
+                batch_y = batch_y.to(device, non_blocking=True)
+                
                 outputs = model(batch_x)
                 
-                # Calculate test loss with same logic as training
                 if dataset_type == 'synth':
                     loss_for_optimization = criterion(outputs, batch_y)
-                    
-                    # For recording: use transformed loss if BCE is used for optimization, otherwise use raw loss
                     if using_bce_for_optimization:
-                        # BCE is used for optimization, apply transformation for recording
                         loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                     else:
-                        # TangentLoss is used for optimization, use it directly for recording (no transformation needed)
                         loss_for_recording = loss_for_optimization
-                    
-                    # Test accuracy for SYNTH
                     predicted = (outputs.squeeze() > 0).float()
-                    # Zero-one loss for test
                     zero_one_loss = zero_one_criterion(outputs, batch_y)
                 else:
-                    # For MNIST: binary classification
                     loss_for_optimization = criterion(outputs, batch_y)
-                    
-                    # For recording: use transformed loss if BCE is used for optimization, otherwise use raw loss
                     if using_bce_for_optimization:
-                        # BCE is used for optimization, apply transformation for recording
                         loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                     else:
-                        # TangentLoss is used for optimization, use it directly for recording (no transformation needed)
                         loss_for_recording = loss_for_optimization
-                    
-                    # Test accuracy for MNIST binary
                     predicted = (outputs.squeeze() > 0).float()
-                    # Zero-one loss for test
                     zero_one_loss = zero_one_criterion(outputs, batch_y)
                 
                 test_loss_total += loss_for_recording.item()
@@ -210,11 +189,24 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         test_zero_one_losses.append(avg_test_zero_one)
         test_accuracies.append(test_accuracy)
         
-        if epoch % 100 == 0 or epoch == num_epochs - 1:
-            print(f'Epoch [{epoch+1}/{num_epochs}], '
-                  f'Train Loss: {avg_train_loss:.4f}, Test Loss: {avg_test_loss:.4f}, '
-                  f'Train 0-1: {avg_train_zero_one:.4f}, Test 0-1: {avg_test_zero_one:.4f}, '
-                  f'LR: {current_lr:.2e}')
+        # More frequent progress reporting with time estimates
+        if epoch % max(1, num_epochs // 10) == 0 or epoch == num_epochs - 1:
+            elapsed_time = time.time() - start_time
+            epochs_per_second = (epoch + 1) / elapsed_time if elapsed_time > 0 else 0
+            eta_seconds = (num_epochs - epoch - 1) / epochs_per_second if epochs_per_second > 0 else 0
+            eta_minutes = eta_seconds / 60
+            
+            print(f'Epoch [{epoch+1:>6}/{num_epochs}] '
+                  f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
+                  f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
+                  f'LR: {current_lr:.2e} '
+                  f'Speed: {epochs_per_second:.1f} ep/s '
+                  f'ETA: {eta_minutes:.1f}min')
+            
+            # GPU memory monitoring (if using CUDA)
+            if device == 'cuda':
+                print(f'GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.0f}MB allocated, '
+                      f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
     
     return train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates
 
@@ -318,11 +310,11 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             
             # Create fresh dataset and model for each repetition
             if dataset_type == 'mnist':
-                mnist_classes = mnist_classes or [0, 1]
+                mnist_classes = [0, 1]
                 train_loader, test_loader = get_mnist_binary_dataloaders(
                     classes=mnist_classes,
                     n_train_per_class=5000,
-                    n_test_per_class=2000,
+                    n_test_per_class=1000,
                     batch_size=128,
                     random_seed=rep,  # Different seed for each repetition
                     normalize=True

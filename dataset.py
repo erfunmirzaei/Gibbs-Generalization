@@ -78,14 +78,18 @@ def create_synth_dataset(
 
 def get_synth_dataloaders(
     batch_size: int = 10,  # SYNTH uses batch size 10
-    random_seed: int = None
+    random_seed: int = None,
+    num_workers: int = 2,  # Add multiprocessing
+    pin_memory: bool = True  # Speed up GPU transfer
 ) -> Tuple[DataLoader, DataLoader]:
     """
-    Create DataLoaders for the SYNTH dataset.
+    Create optimized DataLoaders for the SYNTH dataset.
     
     Args:
         batch_size (int): Batch size for DataLoaders (default: 10 for SYNTH)
         random_seed (int): Random seed for reproducibility
+        num_workers (int): Number of worker processes for data loading
+        pin_memory (bool): Pin memory for faster GPU transfer
         
     Returns:
         Tuple[DataLoader, DataLoader]: Training and test DataLoaders
@@ -95,12 +99,20 @@ def get_synth_dataloaders(
     train_loader = DataLoader(
         train_dataset, 
         batch_size=batch_size, 
-        shuffle=True
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
     )
     test_loader = DataLoader(
         test_dataset, 
-        batch_size=batch_size, 
-        shuffle=False
+        batch_size=batch_size * 2,  # Larger batch for evaluation
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
     )
     
     return train_loader, test_loader
@@ -282,20 +294,24 @@ def get_mnist_binary_dataloaders(
     classes=[0, 1],
     n_train_per_class: int = 1000,
     n_test_per_class: int = 500,
-    batch_size: int = 32,
+    batch_size: int = 128,  # Increase default batch size for better GPU utilization
     random_seed: int = None,
-    normalize: bool = True
+    normalize: bool = True,
+    num_workers: int = 4,  # More workers for MNIST (larger dataset)
+    pin_memory: bool = True
 ) -> Tuple[DataLoader, DataLoader]:
     """
-    Create data loaders for binary MNIST dataset.
+    Create optimized data loaders for binary MNIST dataset.
     
     Args:
         classes: List of two MNIST classes to use
         n_train_per_class: Number of training samples per class
         n_test_per_class: Number of test samples per class
-        batch_size: Batch size for data loaders
+        batch_size: Batch size for data loaders (increased default for efficiency)
         random_seed: Random seed for reproducibility
         normalize: Whether to normalize pixel values
+        num_workers: Number of worker processes for data loading
+        pin_memory: Pin memory for faster GPU transfer
         
     Returns:
         Tuple[DataLoader, DataLoader]: Training and test data loaders
@@ -310,13 +326,21 @@ def get_mnist_binary_dataloaders(
     
     train_loader = DataLoader(
         train_dataset, 
-        batch_size=batch_size, 
-        shuffle=True
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
     )
     test_loader = DataLoader(
         test_dataset, 
-        batch_size=batch_size, 
-        shuffle=False
+        batch_size=batch_size * 2,  # Larger batch for evaluation
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
     )
     
     return train_loader, test_loader

@@ -51,7 +51,78 @@ def invert_kl(p, kl_val):
             r = (r + l) / 2
     return r
 
-def compute_generalization_bound(beta_values, results, loss_type='bce', delta=0.05, delta_prime=0.05):
+def _compute_single_bound(emp_loss, current_beta, results, integration_betas, train_key, n, delta=0.05, delta_prime=0.05, M=1):
+    """
+    Compute a single generalization bound for a given empirical loss.
+    
+    Args:
+        emp_loss: Empirical loss value
+        current_beta: Current beta value
+        results: Dictionary containing experimental results
+        integration_betas: List of beta values for integration
+        train_key: Key for training loss in results
+        n: Training set size
+        delta: Confidence parameter for main bound
+        delta_prime: Confidence parameter for integral bound
+        M: Number of repetitions (for confidence term)
+        
+    Returns:
+        Dictionary containing bound components
+    """
+    # Compute integral bound using all available betas from 0 to current_beta
+    integral_bound = 0.0
+    variance_term = 0.0
+    
+    # Filter integration betas to only include those up to current_beta
+    relevant_betas = [b for b in integration_betas if b <= current_beta]
+    
+    # Always start from 0 and integrate up to current_beta
+    prev_beta = 0.0
+    
+    for beta_k in relevant_betas:
+        # Calculate beta difference from previous point
+        beta_diff = beta_k - prev_beta
+        
+        # Average loss for the previous beta (starting point of interval)
+        avg_loss_k = results[prev_beta][train_key]
+        
+        # Add to integral approximation
+        integral_bound += beta_diff * avg_loss_k
+        variance_term += beta_diff ** 2
+        
+        prev_beta = beta_k
+    
+    # Add the variance/confidence term for the integral
+    integral_confidence = np.sqrt((variance_term + np.log(1 / delta_prime)) / M)
+    integral_upper_bound = integral_bound #TODO: Change to use: + integral_confidence
+
+    # Compute the main generalization bound
+    # Inner term: integral - β * L̂(h,x) + ln(2√n/δ)
+    inner_term = integral_upper_bound - current_beta * emp_loss + np.log(2 * np.sqrt(n) / delta)
+    
+    # Linear term
+    linear_term = (2 * inner_term) / n
+
+    # Ensure inner_term is positive for square root
+    inner_term = max(inner_term, 1e-10)
+    
+    # Square root term
+    sqrt_term = np.sqrt((2 * emp_loss * inner_term) / n)
+    
+    # Total bound: L(h) - L̂(h,x) ≤ sqrt_term + linear_term
+    generalization_bound = linear_term + sqrt_term 
+    
+    return {
+        'integral_bound': integral_bound,
+        'integral_upper_bound': integral_upper_bound,
+        'generalization_bound': generalization_bound,
+        'sqrt_term': sqrt_term,
+        'linear_term': linear_term,
+        'inner_term': inner_term
+    }
+
+
+def compute_generalization_bound(beta_values, results, n, loss_type='bce', delta=0.05, delta_prime=0.05):
     """
     Compute the generalization bound for each beta value cumulatively.
     
@@ -62,6 +133,7 @@ def compute_generalization_bound(beta_values, results, loss_type='bce', delta=0.
     Args:
         beta_values: List of beta values (sorted) - these are the values to compute bounds for
         results: Dictionary containing experimental results (must include beta=0)
+        n: Training set size (required)
         loss_type: 'bce' for bounded cross-entropy or 'zero_one' for zero-one loss
         delta: Confidence parameter for main bound (default: 0.05)
         delta_prime: Confidence parameter for integral bound (default: 0.05)
@@ -70,7 +142,10 @@ def compute_generalization_bound(beta_values, results, loss_type='bce', delta=0.
         Dictionary containing bounds for each beta value
     """
     bounds = {}
-    n = 50  # Training set size for SYNTH dataset
+    
+    # Validate that n is provided
+    if n is None:
+        raise ValueError("Training set size 'n' must be provided as an explicit argument")
     
     # Check that beta=0 is available in results for proper integral computation
     if 0.0 not in results and 0 not in results:
@@ -95,67 +170,31 @@ def compute_generalization_bound(beta_values, results, loss_type='bce', delta=0.
     
     for current_beta in beta_values:
         # Get current beta results
-        average_emp_loss =  results[current_beta][train_key]  # L̂(h, x)
-        M = len( results[current_beta][raw_key])  # Number of repetitions
+        average_emp_loss = results[current_beta][train_key]  # L̂(h, x)
+        M = len(results[current_beta][raw_key])  # Number of repetitions
         
-        # Compute integral bound using all available betas from 0 to current_beta
-        # The integral is from 0 to current_beta
-        integral_bound = 0.0
-        variance_term = 0.0
+        # Compute bound using the unified function
+        bound_components = _compute_single_bound(
+            emp_loss=average_emp_loss,
+            current_beta=current_beta,
+            results=results,
+            integration_betas=integration_betas,
+            train_key=train_key,
+            n=n,
+            delta=delta,
+            delta_prime=delta_prime,
+            M=M
+        )
         
-        # Filter integration betas to only include those up to current_beta
-        relevant_betas = [b for b in integration_betas if b <= current_beta]
-        
-        # Always start from 0 and integrate up to current_beta
-        prev_beta = 0.0
-        
-        for beta_k in relevant_betas:
-            # Calculate beta difference from previous point
-            beta_diff = beta_k - prev_beta
-            
-            # Average loss for the previous beta (starting point of interval)
-            avg_loss_k = results[prev_beta][train_key]
-            
-            # Add to integral approximation
-            integral_bound += beta_diff * avg_loss_k
-            variance_term += beta_diff ** 2
-            
-            prev_beta = beta_k
-        
-        # Add the variance/confidence term for the integral
-        integral_confidence = np.sqrt((variance_term + np.log(1 / delta_prime)) / M)
-        integral_upper_bound = integral_bound #TODO: Change to use: + integral_confidence
-
-        # Compute the main generalization bound
-        # Inner term: integral - β * L̂(h,x) + ln(2√n/δ)
-        inner_term = integral_upper_bound - current_beta * average_emp_loss #TODO:Later + np.log(2 * np.sqrt(n) / delta)
-        
-        # Linear term
-        linear_term = (2 * inner_term) / n
-
-        # Ensure inner_term is positive for square root
-        inner_term = max(inner_term, 1e-10)
-        
-        # Square root term
-        sqrt_term = np.sqrt((2 * average_emp_loss * inner_term) / n)
-        
-        # Total bound: L(h) - L̂(h,x) ≤ sqrt_term + linear_term
-        generalization_bound =  linear_term + sqrt_term 
-        
-        # Debug: Check for NaN in final bound
-        if np.isnan(generalization_bound):
+        # Check for NaN in final bound
+        if np.isnan(bound_components['generalization_bound']):
             print(f"WARNING: NaN generalization_bound for beta={current_beta}, loss_type={loss_type}")
-            generalization_bound = 1.0  # Use fallback value
+            bound_components['generalization_bound'] = 1.0  # Use fallback value
         
         bounds[current_beta] = {
             'average_emp_loss': average_emp_loss,
-            'integral_bound': integral_bound,
-            'integral_upper_bound': integral_upper_bound,
-            'generalization_bound': generalization_bound,
-            'predicted_test_loss': average_emp_loss + generalization_bound,  # L̂(h,x) + bound
-            'sqrt_term': sqrt_term,
-            'linear_term': linear_term,
-            'inner_term': inner_term
+            'predicted_test_loss': average_emp_loss + bound_components['generalization_bound'],  # L̂(h,x) + bound
+            **bound_components  # Include all bound components
         }
     
     return bounds
@@ -196,13 +235,14 @@ def compute_generalization_errors(beta_values, results):
     return generalization_errors
 
 
-def save_results_to_file(results, filename=None, beta_values=None, num_repetitions=None, 
+def save_results_to_file(results, n, filename=None, beta_values=None, num_repetitions=None, 
                         num_epochs=None, a0=None, sigma_gauss_prior=None, dataset_type='synth'):
     """
     Save the experimental results to a text file with descriptive filename.
     
     Args:
         results: Dictionary containing experimental results
+        n: Training set size (required)
         filename: Optional custom filename. If None, generates descriptive filename
         beta_values: List of beta values tested (for filename generation)
         num_repetitions: Number of repetitions per beta (for filename generation)
@@ -211,6 +251,10 @@ def save_results_to_file(results, filename=None, beta_values=None, num_repetitio
         sigma_gauss_prior: Prior parameter (for filename generation)
         dataset_type: Dataset type (for filename generation)
     """
+    # Validate that n is provided
+    if n is None:
+        raise ValueError("Training set size 'n' must be provided as an explicit argument")
+    
     # Generate descriptive filename if not provided
     if filename is None and all(param is not None for param in [beta_values, num_repetitions, num_epochs, a0, sigma_gauss_prior]):
         filename = generate_filename(
@@ -227,14 +271,17 @@ def save_results_to_file(results, filename=None, beta_values=None, num_repetitio
     elif filename is None:
         # Fallback to default naming
         filename = 'results/sgld_beta_experiments.txt'
+    
+    print(f"Using training set size n = {n} for bound computations")
+    
     # Compute generalization bounds and errors
     # Use only the specified beta_values for bounds computation - the bounds function
     # will handle the need for beta=0 internally for proper integral computation
-    bounds = compute_generalization_bound(beta_values or sorted(results.keys()), results, loss_type='bce')
-    zero_one_bounds = compute_generalization_bound(beta_values or sorted(results.keys()), results, loss_type='zero_one')
-    individual_bounds = compute_individual_generalization_bounds(beta_values or sorted(results.keys()), results, loss_type='bce')
-    individual_zero_one_bounds = compute_individual_generalization_bounds(beta_values or sorted(results.keys()), results, loss_type='zero_one')
-    kl_analysis = compute_kl_divergence_analysis(beta_values or sorted(results.keys()), results)
+    bounds = compute_generalization_bound(beta_values or sorted(results.keys()), results, n, loss_type='bce')
+    zero_one_bounds = compute_generalization_bound(beta_values or sorted(results.keys()), results, n, loss_type='zero_one')
+    individual_bounds = compute_individual_generalization_bounds(beta_values or sorted(results.keys()), results, n, loss_type='bce')
+    individual_zero_one_bounds = compute_individual_generalization_bounds(beta_values or sorted(results.keys()), results, n, loss_type='zero_one')
+    kl_analysis = compute_kl_divergence_analysis(beta_values or sorted(results.keys()), results, n)
     gen_errors = compute_generalization_errors(beta_values or sorted(results.keys()), results)
     
     # Use specified beta_values for file content (excluding beta=0 if not originally requested)
@@ -408,9 +455,6 @@ def save_results_to_file(results, filename=None, beta_values=None, num_repetitio
         f.write("- All values are final errors after training completion\n")
         f.write("="*80 + "\n\n")
     
-    print(f"Results saved to {filename}")
-
-
 def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_prior, 
                      dataset_type='synth', file_type='results', extension='txt'):
     """
@@ -503,7 +547,7 @@ def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_
     return filename
 
 
-def compute_individual_generalization_bounds(beta_values, results, loss_type='bce', delta=0.05, delta_prime=0.05):
+def compute_individual_generalization_bounds(beta_values, results, n, loss_type='bce', delta=0.05, delta_prime=0.05):
     """
     Compute the generalization bound for each individual empirical loss, then average and compute std.
     
@@ -514,6 +558,7 @@ def compute_individual_generalization_bounds(beta_values, results, loss_type='bc
     Args:
         beta_values: List of beta values (sorted) - these are the values to compute bounds for
         results: Dictionary containing experimental results (must include beta=0)
+        n: Training set size (required)
         loss_type: 'bce' for bounded cross-entropy or 'zero_one' for zero-one loss
         delta: Confidence parameter for main bound (default: 0.05)
         delta_prime: Confidence parameter for integral bound (default: 0.05)
@@ -522,7 +567,10 @@ def compute_individual_generalization_bounds(beta_values, results, loss_type='bc
         Dictionary containing individual bounds statistics for each beta value
     """
     individual_bounds = {}
-    n = 50  # Training set size for SYNTH dataset
+    
+    # Validate that n is provided
+    if n is None:
+        raise ValueError("Training set size 'n' must be provided as an explicit argument")
     
     # Check that beta=0 is available in results for proper integral computation
     if 0.0 not in results and 0 not in results:
@@ -550,60 +598,28 @@ def compute_individual_generalization_bounds(beta_values, results, loss_type='bc
         individual_emp_losses = results[current_beta][raw_key]  # List of individual losses
         M = len(individual_emp_losses)  # Number of repetitions
         
-        # Compute bound for each individual empirical loss
+        # Compute bound for each individual empirical loss using the unified function
         individual_bound_values = []
         
         for emp_loss in individual_emp_losses:
-            # Compute integral bound using all available betas from 0 to current_beta
-            # The integral is from 0 to current_beta
-            integral_bound = 0.0
-            variance_term = 0.0
-            
-            # Filter integration betas to only include those up to current_beta
-            relevant_betas = [b for b in integration_betas if b <= current_beta]
-            
-            # Always start from 0 and integrate up to current_beta
-            prev_beta = 0.0
-            
-            for beta_k in relevant_betas:
-                # Calculate beta difference from previous point
-                beta_diff = beta_k - prev_beta
-                
-                # Average loss for the previous beta (starting point of interval)
-                avg_loss_k = results[prev_beta][train_key]
-                
-                # Add to integral approximation
-                integral_bound += beta_diff * avg_loss_k
-                variance_term += beta_diff ** 2
-                
-                prev_beta = beta_k
-            
-            # Add the variance/confidence term for the integral
-            integral_confidence = np.sqrt((variance_term + np.log(1 / delta_prime)) / M)
-            integral_upper_bound = integral_bound #TODO: Change to use: + integral_confidence
-
-            # Compute the main generalization bound for this individual empirical loss
-            # Inner term: integral - β * L̂(h,x) + ln(2√n/δ)
-            inner_term = integral_upper_bound - current_beta * emp_loss #TODO:Later + np.log(2 * np.sqrt(n) / delta)
-            
-            # Linear term
-            linear_term = (2 * inner_term) / n
-
-            # Ensure inner_term is positive for square root
-            inner_term = max(inner_term, 1e-10)
-            
-            # Square root term
-            sqrt_term = np.sqrt((2 * emp_loss * inner_term) / n)
-            
-            # Total bound: L(h) - L̂(h,x) ≤ sqrt_term + linear_term
-            generalization_bound = linear_term + sqrt_term 
+            bound_result = _compute_single_bound(
+                emp_loss=emp_loss,
+                current_beta=current_beta,
+                results=results,
+                integration_betas=integration_betas,
+                train_key=raw_key,
+                n=n,
+                delta=delta,
+                delta_prime=delta_prime,
+                M=M
+            )
             
             # Check for NaN in final bound
-            if np.isnan(generalization_bound):
+            if np.isnan(bound_result['generalization_bound']):
                 print(f"WARNING: NaN generalization_bound for beta={current_beta}, loss_type={loss_type}, emp_loss={emp_loss}")
-                generalization_bound = 1.0  # Use fallback value
+                bound_result['generalization_bound'] = 1.0  # Use fallback value
             
-            individual_bound_values.append(generalization_bound)
+            individual_bound_values.append(bound_result['generalization_bound'])
         
         # Compute statistics over all individual bounds
         individual_bound_values = np.array(individual_bound_values)
@@ -627,7 +643,7 @@ def compute_individual_generalization_bounds(beta_values, results, loss_type='bc
     return individual_bounds
 
 
-def compute_kl_divergence_analysis(beta_values, results, loss_type='bce'):
+def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
     """
     Compute KL divergence between train and test error for each beta and repetition.
     Also compute bounds on KL divergence and use invert_kl to bound test error.
@@ -635,13 +651,17 @@ def compute_kl_divergence_analysis(beta_values, results, loss_type='bce'):
     Args:
         beta_values: List of beta values (sorted) - these are the values to compute for
         results: Dictionary containing experimental results (must include beta=0)
+        n: Training set size (required)
         loss_type: 'bce' for bounded cross-entropy or 'zero_one' for zero-one loss
         
     Returns:
         Dictionary containing KL divergence statistics for each beta value
     """
     kl_analysis = {}
-    n = 50  # Training set size for SYNTH dataset
+    
+    # Validate that n is provided
+    if n is None:
+        raise ValueError("Training set size 'n' must be provided as an explicit argument")
     
     # Check that beta=0 is available in results for proper integral computation
     if 0.0 not in results and 0 not in results:
@@ -656,17 +676,17 @@ def compute_kl_divergence_analysis(beta_values, results, loss_type='bce'):
     
     # Choose the appropriate loss type keys
     if loss_type == 'bce':
-        train_raw_key = 'raw_train_bce'
+        train_key = 'train_bce_mean'
+        raw_key = 'raw_train_bce'
         test_raw_key = 'raw_test_bce'
-        train_mean_key = 'train_bce_mean'
     else:  # zero_one
-        train_raw_key = 'raw_train_01'
+        train_key = 'train_01_mean'
+        raw_key = 'raw_train_01'
         test_raw_key = 'raw_test_01'
-        train_mean_key = 'train_01_mean'
     
     for current_beta in beta_values:
         # Get individual train and test errors for the specified loss type
-        individual_train_losses = results[current_beta][train_raw_key]
+        individual_train_losses = results[current_beta][raw_key]
         individual_test_losses = results[current_beta][test_raw_key]
         M = len(individual_train_losses)  # Number of repetitions
         
@@ -678,10 +698,7 @@ def compute_kl_divergence_analysis(beta_values, results, loss_type='bce'):
         for i in range(M):
             train_error = individual_train_losses[i]
             test_error = individual_test_losses[i]
-            
-            # Ensure values are in valid range for KL divergence (0, 1)
-            train_error = max(min(train_error, 0.99), 0.01)
-            test_error = max(min(test_error, 0.99), 0.01)
+
             
             # Compute KL divergence between train and test
             try:
@@ -692,30 +709,22 @@ def compute_kl_divergence_analysis(beta_values, results, loss_type='bce'):
                 individual_kl_values.append(0.0)
                 continue
             
-            # Compute integral bound using all available betas from 0 to current_beta
-            integral_bound = 0.0
-            prev_beta = 0.0
+            # Use the same unified bound computation approach as individual bounds
+            bound_result = _compute_single_bound(
+                emp_loss=train_error,
+                current_beta=current_beta,
+                results=results,
+                integration_betas=integration_betas,
+                train_key=train_key,
+                n=n,
+                delta=0.05,
+                delta_prime=0.05,
+                M=M
+            )
             
-            # Filter integration betas to only include those up to current_beta
-            relevant_betas = [b for b in integration_betas if b <= current_beta]
-            
-            for beta_k in relevant_betas:
-                # Calculate beta difference from previous point
-                beta_diff = beta_k - prev_beta
-                
-                # Average loss for the previous beta (starting point of interval)
-                avg_loss_k = results[prev_beta][train_mean_key]
-                
-                # Add to integral approximation
-                integral_bound += beta_diff * avg_loss_k
-                prev_beta = beta_k
-            
-            # Compute KL bound using inner term divided by n
-            # Inner term: integral - β * train_error
-            inner_term = integral_bound - current_beta * train_error
-            kl_bound = inner_term / n
+            # Extract the KL bound from the inner term divided by n
+            kl_bound = bound_result['inner_term'] / n
             kl_bound = max(kl_bound, 0.0)  # Ensure non-negative
-            
             individual_kl_bounds.append(kl_bound)
             
             # Use invert_kl to bound the test error

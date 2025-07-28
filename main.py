@@ -11,6 +11,7 @@ and computing PAC-Bayesian generalization bounds for the SYNTH dataset.
 
 import torch
 import numpy as np
+import time
 from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels,
                     create_mnist_binary_dataset, get_mnist_binary_dataloaders)
 from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
@@ -20,7 +21,7 @@ from bounds import compute_generalization_bound, compute_generalization_errors, 
 from plot_utils import plot_beta_results
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  True
+TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = False
@@ -31,21 +32,51 @@ DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 MNIST_CLASSES = [0, 1]
 
+def gpu_diagnostic():
+    """Perform GPU diagnostic and optimization setup."""
+    if not torch.cuda.is_available():
+        print("❌ CUDA not available - using CPU only")
+        print("Training will be significantly slower on CPU")
+        return 'cpu', False
+    
+    print("✅ CUDA available")
+    device_name = torch.cuda.get_device_name(0)
+    memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
+    print(f"GPU: {device_name}")
+    print(f"GPU Memory: {memory_gb:.1f} GB")
+    
+    # Test GPU performance
+    print("Testing GPU performance...")
+    x = torch.randn(2000, 2000, device='cuda')
+    y = torch.randn(2000, 2000, device='cuda')
+    
+    start_time = time.time()
+    z = torch.mm(x, y)
+    torch.cuda.synchronize()
+    gpu_time = time.time() - start_time
+    
+    print(f"GPU matrix multiply (2000x2000): {gpu_time:.4f}s")
+    
+    # Enable optimizations
+    if torch.backends.cudnn.is_available():
+        torch.backends.cudnn.benchmark = True
+        torch.backends.cudnn.enabled = True
+        print("✅ cuDNN optimizations enabled")
+    
+    return 'cuda'
+
+
 def main():
     """Main experiment function."""
-    # Set device
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device}")
-    if device.type == 'cuda':
-        print(f"GPU: {torch.cuda.get_device_name(0)}")
-        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+    # GPU diagnostic and setup
+    device = gpu_diagnostic()
     
     # Test the dataset creation (quick check)
     if DATASET_TYPE == 'mnist':
         train_dataset, test_dataset = create_mnist_binary_dataset(
             classes=MNIST_CLASSES,
-            n_train_per_class=1000,
-            n_test_per_class=500,
+            n_train_per_class=5000,
+            n_test_per_class=1000,
             random_seed=42,
             normalize=True
         )
@@ -74,24 +105,24 @@ def main():
 
         
         if DATASET_TYPE == 'mnist':
-            # MNIST needs fewer epochs typically
-            beta_values = [1000, 2000]  # Reduced set for testing
-            num_repetitions = 3  # Reduced for testing
-            num_epochs = {0: 1, 1000: 1000, 2000: 1000}
+            # MNIST needs fewer epochs typically - FAST TEST MODE
+            beta_values = [1000, 2000]  # Minimal set for testing
+            num_repetitions = 2  # Very fast testing
+            num_epochs = {0: 10, 1000: 50, 2000: 50}  # Much fewer epochs
             a0 = {0: 1e-5, 1000: 1e-3, 2000: 0.001}
         else:
-            # SYNTH dataset configuration
-            beta_values = [1, 10, 50]  # Reduced set for testing
-            num_repetitions = 3  # Reduced for testing
-            num_epochs = {0: 100, 1: 100, 10: 1000, 50: 1000}
-            a0 = {0: 0.01, 1: 0.01, 10: 0.1, 50: 0.1}
+            # SYNTH dataset configuration - FAST TEST MODE
+            beta_values = [1, 10]  # Minimal set for testing  
+            num_repetitions = 2  # Very fast testing
+            num_epochs = {0: 10, 1: 20, 10: 50}  # Much fewer epochs
+            a0 = {0: 0.01, 1: 0.01, 10: 0.1}
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [0, 1, 10, 30, 50]  # Full MNIST experiment
-            num_repetitions = 10  # Full experiment
-            num_epochs = {0: 1, 1: 100, 10: 500, 30: 1000, 50: 1500}
-            a0 = {0: 1e-7, 1: 1e-3, 10: 1e-2, 30: 1e-2, 50: 1e-2}
+            beta_values = [1000,3000,5000,10000,20000]  # Full MNIST experiment
+            num_repetitions = 5  # Full experiment
+            num_epochs = {0: 1, 1000: 500, 3000: 500, 5000: 500, 10000: 1000, 20000: 1000}
+            a0 = {0: 1e-7, 1000: 1e-3, 3000: 1e-3, 5000: 1e-3, 10000: 1e-3, 20000: 1e-3}
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
@@ -131,8 +162,9 @@ def main():
     else:
         print(f"Learning rate (a0): {a0}")
     print(f"{'='*70}")
+
     
-    # Run the experiment
+    # Run the experiment with optimizations
     results = run_beta_experiments(
         beta_values=beta_values,
         num_repetitions=num_repetitions,
@@ -154,10 +186,13 @@ def main():
     print("Beta\tTrain_BCE\tTest_BCE\tBCE_GenErr\tBCE_Bound\tBound_Gap\tTrain_01\tTest_01\tZO_GenErr\tZO_Bound\tZO_Gap")
     print("-" * 110)
     
+    # Get training set size for bounds computation
+    n_train = len(train_dataset)
+    
     # Compute bounds and generalization errors for summary
     # The bounds functions will handle the need for beta=0 internally
-    bounds = compute_generalization_bound(beta_values, results, loss_type='bce')
-    zero_one_bounds = compute_generalization_bound(beta_values, results, loss_type='zero_one')
+    bounds = compute_generalization_bound(beta_values, results, n_train, loss_type='bce')
+    zero_one_bounds = compute_generalization_bound(beta_values, results, n_train, loss_type='zero_one')
     gen_errors = compute_generalization_errors(beta_values, results)
     
     # Display results only for the originally requested beta values
@@ -197,7 +232,7 @@ def main():
     }
     
     # Save results to file with descriptive filename (using original beta values for filename)
-    save_results_to_file(results, **experiment_params)
+    save_results_to_file(results, n_train, **experiment_params)
     
     # Plot the results with descriptive filename (only plot original beta values, not beta=0)
     plot_beta_results(results, **experiment_params)
@@ -220,38 +255,7 @@ def main():
     print(f"{'='*70}")
 
 
-def test_loss_functions():
-    """Test the loss functions with sample data."""
-    print("\n" + "="*50)
-    print("Testing Bounded Cross Entropy Loss (Quick Demo)")
-    print("="*50)
-    
-    criterion = BoundedCrossEntropyLoss(ell_max=4.0)
-    zero_one_criterion = ZeroOneLoss()
-    
-    # Test with single output (SYNTH style)
-    test_logits_single = torch.randn(5, 1)  # 5 samples, 1 output
-    test_targets = torch.tensor([0, 1, 0, 1, 0], dtype=torch.float32)
-    
-    bounded_loss_single = criterion(test_logits_single, test_targets)
-    zero_one_loss_single = zero_one_criterion(test_logits_single, test_targets)
-    
-    print(f"Bounded CE Loss (single output): {bounded_loss_single.item():.4f}")
-    print(f"Zero-One Loss (single output): {zero_one_loss_single.item():.4f}")
-    print(f"Loss bounded in [0, {criterion.ell_max}]: {0 <= bounded_loss_single.item() <= criterion.ell_max}")
-    
-    # Test with binary output (2 classes)
-    test_logits_binary = torch.randn(5, 2)
-    bounded_loss_binary = criterion(test_logits_binary, test_targets)
-    zero_one_loss_binary = zero_one_criterion(test_logits_binary, test_targets)
-    
-    print(f"Bounded CE Loss (binary output): {bounded_loss_binary.item():.4f}")
-    print(f"Zero-One Loss (binary output): {zero_one_loss_binary.item():.4f}")
-
-
 if __name__ == "__main__":
-    # Test loss functions first
-    test_loss_functions()
     
     # Run main experiment
     main()
