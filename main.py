@@ -21,7 +21,7 @@ from bounds import compute_generalization_bound, compute_generalization_errors, 
 from plot_utils import plot_beta_results
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  False
+TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = False
@@ -106,10 +106,10 @@ def main():
         
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [1000, 2000]  # Minimal set for testing
-            num_repetitions = 2  # Very fast testing
-            num_epochs = {0: 10, 1000: 50, 2000: 50}  # Much fewer epochs
-            a0 = {0: 1e-5, 1000: 1e-3, 2000: 0.001}
+            beta_values = [1000]  # Minimal set for testing
+            num_repetitions = 20  # Very fast testing
+            num_epochs = {0: 1, 1000: 1000, }  # Much fewer epochs
+            a0 = {0: 1e-5, 1000: 1e-3,}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
