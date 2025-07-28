@@ -9,9 +9,10 @@ import numpy as np
 import torch
 import torch.optim as optim
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
-from models import SynthNN
+from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
 from sgld import SGLD
-from dataset import get_synth_dataloaders, get_synth_dataloaders_random_labels
+from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
+                    get_mnist_binary_dataloaders)
 
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
@@ -114,7 +115,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                 # Zero-one loss for training
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
             else:
-                # For MNIST: multi-class classification
+                # For MNIST: binary classification (classes 0 and 1)
                 loss_for_optimization = criterion(outputs, batch_y)
                 
                 # For recording: use transformed loss if BCE is used for optimization, otherwise use raw loss
@@ -125,8 +126,8 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                     # TangentLoss is used for optimization, use it directly for recording (no transformation needed)
                     loss_for_recording = loss_for_optimization
                 
-                # Training accuracy for MNIST
-                predicted = torch.argmax(outputs, dim=1)
+                # Training accuracy for MNIST binary
+                predicted = (outputs.squeeze() > 0).float()
                 # Zero-one loss for training
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
             
@@ -181,6 +182,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                     # Zero-one loss for test
                     zero_one_loss = zero_one_criterion(outputs, batch_y)
                 else:
+                    # For MNIST: binary classification
                     loss_for_optimization = criterion(outputs, batch_y)
                     
                     # For recording: use transformed loss if BCE is used for optimization, otherwise use raw loss
@@ -191,8 +193,8 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                         # TangentLoss is used for optimization, use it directly for recording (no transformation needed)
                         loss_for_recording = loss_for_optimization
                     
-                    # Test accuracy for MNIST
-                    predicted = torch.argmax(outputs, dim=1)
+                    # Test accuracy for MNIST binary
+                    predicted = (outputs.squeeze() > 0).float()
                     # Zero-one loss for test
                     zero_one_loss = zero_one_criterion(outputs, batch_y)
                 
@@ -220,7 +222,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
 def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000, 
                          a0=1e-1, b=0.5, sigma_gauss_prior=1000000, 
                          device='cpu', dataset_type='synth', use_random_labels=False,
-                         l_max=2.0):
+                         l_max=2.0, mnist_classes=None):
     """
     Run experiments across different beta values with multiple repetitions.
     
@@ -315,7 +317,17 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             print(f"Repetition {rep+1}/{num_repetitions} for beta = {beta}")
             
             # Create fresh dataset and model for each repetition
-            if use_random_labels:
+            if dataset_type == 'mnist':
+                mnist_classes = mnist_classes or [0, 1]
+                train_loader, test_loader = get_mnist_binary_dataloaders(
+                    classes=mnist_classes,
+                    n_train_per_class=5000,
+                    n_test_per_class=2000,
+                    batch_size=128,
+                    random_seed=rep,  # Different seed for each repetition
+                    normalize=True
+                )
+            elif use_random_labels:
                 train_loader, test_loader = get_synth_dataloaders_random_labels(
                     batch_size=10, 
                     random_seed=rep  # Different seed for each repetition
@@ -327,7 +339,11 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 )
             
             # Create fresh model 
-            model = SynthNN(input_dim=4, hidden_dim=500) # TODO: Adjust hidden_dim as needed
+            if dataset_type == 'mnist':
+                model = MNISTNN(input_dim=28*28, hidden_dim=500, output_dim=1)
+            else:
+                # For SYNTH dataset, use the SynthNN model
+                model = SynthNN(input_dim=4, hidden_dim=500) # TODO: Adjust hidden_dim as needed
             
             # Train the model
             train_losses, test_losses, _, _, train_01_losses, test_01_losses, _ = train_sgld_model(

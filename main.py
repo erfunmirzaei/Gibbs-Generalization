@@ -11,32 +11,57 @@ and computing PAC-Bayesian generalization bounds for the SYNTH dataset.
 
 import torch
 import numpy as np
-from dataset import create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels
-from models import SynthNN
+from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels,
+                    create_mnist_binary_dataset, get_mnist_binary_dataloaders)
+from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss
 from training import run_beta_experiments
 from bounds import compute_generalization_bound, compute_generalization_errors, save_results_to_file
 from plot_utils import plot_beta_results
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  False
+TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = True
+USE_RANDOM_LABELS = False
+
+# Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
+DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
+
+# MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
+MNIST_CLASSES = [0, 1]
 
 def main():
     """Main experiment function."""
     # Set device
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Using device: {device}")
+    if device.type == 'cuda':
+        print(f"GPU: {torch.cuda.get_device_name(0)}")
+        print(f"GPU Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
     
     # Test the dataset creation (quick check)
-    if USE_RANDOM_LABELS:
-        train_dataset, test_dataset = create_synth_dataset_random_labels(random_seed=42)
-        print(f"Using SYNTH dataset with RANDOM LABELS")
+    if DATASET_TYPE == 'mnist':
+        train_dataset, test_dataset = create_mnist_binary_dataset(
+            classes=MNIST_CLASSES,
+            n_train_per_class=1000,
+            n_test_per_class=500,
+            random_seed=42,
+            normalize=True
+        )
+        dataset_name = f"MNIST Binary (classes {MNIST_CLASSES[0]} vs {MNIST_CLASSES[1]})"
+        dataset_type_str = f'mnist_{MNIST_CLASSES[0]}v{MNIST_CLASSES[1]}'
     else:
-        train_dataset, test_dataset = create_synth_dataset(random_seed=42)
-        print(f"Using SYNTH dataset with LINEAR LABELS")
+        if USE_RANDOM_LABELS:
+            train_dataset, test_dataset = create_synth_dataset_random_labels(random_seed=42)
+            dataset_name = "SYNTH dataset with RANDOM LABELS"
+            dataset_type_str = 'synth_random_labels'
+        else:
+            train_dataset, test_dataset = create_synth_dataset(random_seed=42)
+            dataset_name = "SYNTH dataset with LINEAR LABELS"
+            dataset_type_str = 'synth'
+    
+    print(f"Using {dataset_name}")
     print(f"Training dataset size: {len(train_dataset)}")
     print(f"Test dataset size: {len(test_dataset)}")
     
@@ -46,38 +71,36 @@ def main():
         print("RUNNING IN TEST MODE")
         print("For full experiment, set TEST_MODE = False")
         print("="*50)
-        beta_values = [1, 10, 50, 200]  # Reduced set for testing
-        num_repetitions = 5  # Reduced for testing
+
         
-        # Example: Different epochs for different beta values
-        # Option 1: Use a dictionary mapping
-        num_epochs = {0: 100, 1: 100, 10: 1000, 50: 1000, 200: 1000}
-        
-        # Example: Different learning rates (a0) for different beta values
-        # Option 1: Use a dictionary mapping
-        a0 = {0: 0.01, 1: 0.01, 10: 0.1, 50: 0.1, 200: 0.1}
-        
-        # Option 2: Use the adaptive function (alternative)
-        # from training import create_adaptive_epochs_function, create_adaptive_a0_function
-        # num_epochs = create_adaptive_epochs_function(low_beta_epochs=100, high_beta_epochs=1000, threshold=5.0)
-        # a0 = create_adaptive_a0_function(low_beta_a0=0.01, high_beta_a0=0.1, threshold=5.0)
-        
-        # Option 3: Use a custom function (alternative)
-        # num_epochs = lambda beta: 100 if beta <= 5 else 1000
-        # a0 = lambda beta: 0.01 if beta <= 5 else 0.1
+        if DATASET_TYPE == 'mnist':
+            # MNIST needs fewer epochs typically
+            beta_values = [1000, 2000]  # Reduced set for testing
+            num_repetitions = 3  # Reduced for testing
+            num_epochs = {0: 1, 1000: 1000, 2000: 1000}
+            a0 = {0: 1e-5, 1000: 1e-3, 2000: 0.001}
+        else:
+            # SYNTH dataset configuration
+            beta_values = [1, 10, 50]  # Reduced set for testing
+            num_repetitions = 3  # Reduced for testing
+            num_epochs = {0: 100, 1: 100, 10: 1000, 50: 1000}
+            a0 = {0: 0.01, 1: 0.01, 10: 0.1, 50: 0.1}
         
     else:
-        beta_values = [0,1,10,30,50,70,100,200]  # Full experiment
-        num_repetitions = 30  # Full experiment
-        num_epochs = {0:1,1:100,10:5000,30:10000,50:15000,70:20000,100:30000,200:30000}
-        a0 = {0: 1e-7, 1:1e-7, 10:1e-1, 30:1e-1, 50: 1e-1, 70:1e-1, 100:1e-1, 200:1e-1}  # Different learning rates per beta
+        if DATASET_TYPE == 'mnist':
+            beta_values = [0, 1, 10, 30, 50]  # Full MNIST experiment
+            num_repetitions = 10  # Full experiment
+            num_epochs = {0: 1, 1: 100, 10: 500, 30: 1000, 50: 1500}
+            a0 = {0: 1e-7, 1: 1e-3, 10: 1e-2, 30: 1e-2, 50: 1e-2}
+        else:
+            beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
+            num_repetitions = 30  # Full experiment
+            num_epochs = {0: 1, 1: 100, 10: 5000, 30: 10000, 50: 15000, 70: 20000, 100: 30000, 200: 30000}
+            a0 = {0: 1e-7, 1: 1e-7, 10: 1e-1, 30: 1e-1, 50: 1e-1, 70: 1e-1, 100: 1e-1, 200: 1e-1}
     
     print(f"\n{'='*70}")
     print(f"SGLD BETA EXPERIMENTS")
-    if USE_RANDOM_LABELS:
-        print(f"Dataset: SYNTH with RANDOM LABELS")
-    else:
-        print(f"Dataset: SYNTH with LINEAR LABELS")
+    print(f"Dataset: {dataset_name}")
     print(f"Beta values: {beta_values}")
     print(f"Repetitions per beta: {num_repetitions}")
     if isinstance(num_epochs, dict):
@@ -118,9 +141,10 @@ def main():
         b=0.5,
         sigma_gauss_prior=1000,
         device=device,
-        dataset_type='synth',
+        dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
-        l_max=4.0
+        l_max=4.0,
+        mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None
     )
     
     # Print final summary
@@ -163,7 +187,6 @@ def main():
     
     # Define experimental parameters for saving/plotting
     # Use original beta values for filename generation and plotting (excluding auto-added beta=0)
-    dataset_type_str = 'synth_random_labels' if USE_RANDOM_LABELS else 'synth'
     experiment_params = {
         'beta_values': beta_values,
         'num_repetitions': num_repetitions,
