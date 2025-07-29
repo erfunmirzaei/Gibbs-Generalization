@@ -15,35 +15,44 @@ def ln(x):
     return math.log(x)
 
 
-def kl(p, q):
+def kl(p, q, eps=1e-10):
     """
     Compute KL divergence between two Bernoulli distributions.
     
     Args:
         p: First probability
         q: Second probability
+        eps: Small epsilon to prevent numerical issues with zero values
     
     Returns:
         KL divergence KL(p||q)
     """
+    # Add epsilon to prevent log(0) and division by 0
+    p = max(min(p, 1.0 - eps), eps)  # Clamp p to [eps, 1-eps]
+    q = max(min(q, 1.0 - eps), eps)  # Clamp q to [eps, 1-eps]
+    
     y = p * ln(p / q) + (1 - p) * ln((1 - p) / (1 - q))
     return y
 
 
-def invert_kl(p, kl_val):
+def invert_kl(p, kl_val, eps=1e-10):
     """
     Invert KL divergence to find q such that KL(p||q) = kl_val.
     
     Args:
         p: First probability (fixed)
         kl_val: Target KL divergence value
+        eps: Small epsilon to prevent numerical issues with zero values
     
     Returns:
         q such that KL(p||q) = kl_val
     """
-    l, u, r = p, 1, 0.5
+    # Clamp p to prevent numerical issues
+    p = max(min(p, 1.0 - eps), eps)
+    
+    l, u, r = p, 1 - eps, 0.5
     while ((u - l) > 1 / 100000):
-        if kl(p, r) < kl_val:
+        if kl(p, r, eps) < kl_val:
             l = r
             r = (r + u) / 2
         else:
@@ -84,7 +93,18 @@ def _compute_single_bound(emp_loss, current_beta, results, integration_betas, tr
         beta_diff = beta_k - prev_beta
         
         # Average loss for the previous beta (starting point of interval)
-        avg_loss_k = results[prev_beta][train_key]
+        # Always use the mean value for integration, regardless of train_key
+        if train_key.startswith('raw_'):
+            # If train_key is raw_*, get the corresponding mean key
+            mean_key = train_key.replace('raw_', '').replace('bce', 'bce_mean').replace('01', '01_mean')
+            if 'bce' in train_key:
+                mean_key = 'train_bce_mean'
+            else:  # '01' in train_key
+                mean_key = 'train_01_mean'
+        else:
+            mean_key = train_key
+            
+        avg_loss_k = results[prev_beta][mean_key]
         
         # Add to integral approximation
         integral_bound += beta_diff * avg_loss_k
@@ -702,10 +722,18 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
             
             # Compute KL divergence between train and test
             try:
-                kl_div = kl(train_error, test_error)
-                individual_kl_values.append(kl_div)
-            except:
-                # Handle edge cases
+                # Add epsilon handling to prevent numerical issues with zero values
+                eps = 1e-10
+                kl_div = kl(train_error, test_error, eps)
+                # Check if the result is valid (not NaN or infinite)
+                if np.isnan(kl_div) or np.isinf(kl_div):
+                    print(f"WARNING: Invalid KL divergence for beta={current_beta}, train={train_error}, test={test_error}")
+                    individual_kl_values.append(0.0)
+                else:
+                    individual_kl_values.append(kl_div)
+            except Exception as e:
+                # Handle edge cases with more detailed error information
+                print(f"WARNING: KL computation failed for beta={current_beta}, train={train_error}, test={test_error}: {e}")
                 individual_kl_values.append(0.0)
                 continue
             
@@ -730,12 +758,18 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
             # Use invert_kl to bound the test error
             try:
                 if kl_bound > 0:
-                    test_bound = invert_kl(train_error, kl_bound)
+                    eps = 1e-10
+                    test_bound = invert_kl(train_error, kl_bound, eps)
+                    # Check if the result is valid
+                    if np.isnan(test_bound) or np.isinf(test_bound):
+                        print(f"WARNING: Invalid test bound from invert_kl for beta={current_beta}, train={train_error}, kl_bound={kl_bound}")
+                        test_bound = max(train_error, 1.0)  # Use reasonable fallback
                 else:
                     test_bound = train_error  # If no bound, use train error
                 individual_test_bounds.append(test_bound)
-            except:
-                individual_test_bounds.append(1.0)  # Fallback bound
+            except Exception as e:
+                print(f"WARNING: invert_kl failed for beta={current_beta}, train={train_error}, kl_bound={kl_bound}: {e}")
+                individual_test_bounds.append(max(train_error, 1.0))  # Fallback bound
         
         # Compute statistics over all repetitions
         individual_kl_values = np.array(individual_kl_values)

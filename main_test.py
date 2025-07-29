@@ -12,7 +12,7 @@ and computing PAC-Bayesian generalization bounds for the SYNTH dataset.
 import torch
 import numpy as np
 import time
-from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels, get_synth_dataloaders_random_labels,
+from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels,
                     create_mnist_binary_dataset, get_mnist_binary_dataloaders,
                     create_mnist_binary_dataset_random_labels, get_mnist_binary_dataloaders_random_labels)
 from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
@@ -22,19 +22,16 @@ from bounds import compute_generalization_bound, compute_generalization_errors, 
 from plot_utils import plot_beta_results
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  False
+TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = False
+USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
-# Can be either:
-# - Individual classes: [0, 1] 
-# - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
-MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
+MNIST_CLASSES = [4, 9]
 
 def gpu_diagnostic():
     """Perform GPU diagnostic and optimization setup."""
@@ -75,6 +72,42 @@ def main():
     # GPU diagnostic and setup
     device = gpu_diagnostic()
     
+    # Test the dataset creation (quick check)
+    if DATASET_TYPE == 'mnist':
+        if USE_RANDOM_LABELS:
+            train_dataset, test_dataset = create_mnist_binary_dataset_random_labels(
+                classes=MNIST_CLASSES,
+                n_train_per_class=5000,
+                n_test_per_class=1000,
+                random_seed=42,
+                normalize=True
+            )
+            dataset_name = f"MNIST Binary with RANDOM LABELS (classes {MNIST_CLASSES[0]} vs {MNIST_CLASSES[1]})"
+            dataset_type_str = f'mnist_{MNIST_CLASSES[0]}v{MNIST_CLASSES[1]}_random_labels'
+        else:
+            train_dataset, test_dataset = create_mnist_binary_dataset(
+                classes=MNIST_CLASSES,
+                n_train_per_class=5000,
+                n_test_per_class=1000,
+                random_seed=42,
+                normalize=True
+            )
+            dataset_name = f"MNIST Binary (classes {MNIST_CLASSES[0]} vs {MNIST_CLASSES[1]})"
+            dataset_type_str = f'mnist_{MNIST_CLASSES[0]}v{MNIST_CLASSES[1]}'
+    else:
+        if USE_RANDOM_LABELS:
+            train_dataset, test_dataset = create_synth_dataset_random_labels(random_seed=42)
+            dataset_name = "SYNTH dataset with RANDOM LABELS"
+            dataset_type_str = 'synth_random_labels'
+        else:
+            train_dataset, test_dataset = create_synth_dataset(random_seed=42)
+            dataset_name = "SYNTH dataset with LINEAR LABELS"
+            dataset_type_str = 'synth'
+    
+    print(f"Using {dataset_name}")
+    print(f"Training dataset size: {len(train_dataset)}")
+    print(f"Test dataset size: {len(test_dataset)}")
+    
     # Define beta values to test
     if TEST_MODE:
         print("\n" + "="*50)
@@ -85,10 +118,10 @@ def main():
         
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [4000]  # Minimal set for testing
-            num_repetitions = 5  # Very fast testing
-            num_epochs = {0: 1,4000: 5000, }  # Much fewer epochs
-            a0 = {0: 1e-7, 4000: 1e-1}
+            beta_values = [1000]  # Minimal set for testing
+            num_repetitions = 10  # Very fast testing
+            num_epochs = {0: 1, 1000: 100, }  # Much fewer epochs
+            a0 = {0: 1e-7, 1000: 1e-3}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
@@ -98,10 +131,10 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [250,500,1000, 1500, 2000, 4000, 8000,16000]  # Full MNIST experiment
-            num_repetitions = 10  # Full experiment
-            num_epochs = {0: 1, 250: 500, 500: 500, 1000: 1000, 1500: 1500, 2000: 2000, 4000: 4000, 8000: 8000, 16000: 10000}   
-            a0 = {0: 1e-10, 250: 0.001, 500: 0.005, 1000: 0.01, 1500: 0.02, 2000: 0.05, 4000: 0.1, 8000: 0.1, 16000: 0.2}
+            beta_values = [1000,3000,5000,10000,20000]  # Full MNIST experiment
+            num_repetitions = 5  # Full experiment
+            num_epochs = {0: 1, 1000: 500, 3000: 500, 5000: 500, 10000: 1000, 20000: 1000}
+            a0 = {0: 1e-7, 1000: 1e-3, 3000: 1e-3, 5000: 1e-3, 10000: 1e-3, 20000: 1e-3}
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
@@ -110,7 +143,7 @@ def main():
     
     print(f"\n{'='*70}")
     print(f"SGLD BETA EXPERIMENTS")
-    print(f"Dataset: {DATASET_TYPE.upper()}")
+    print(f"Dataset: {dataset_name}")
     print(f"Beta values: {beta_values}")
     print(f"Repetitions per beta: {num_repetitions}")
     if isinstance(num_epochs, dict):
@@ -142,41 +175,6 @@ def main():
         print(f"Learning rate (a0): {a0}")
     print(f"{'='*70}")
 
-    # Create dataloaders once (same dataset for all repetitions and beta values)
-    print("\nCreating dataset and dataloaders...")
-    if DATASET_TYPE == 'mnist':
-        if USE_RANDOM_LABELS:
-            train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
-                classes=MNIST_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=128,
-                random_seed=42000,  # Fixed seed for consistent dataset
-                normalize=True
-            )
-        else:
-            train_loader, test_loader = get_mnist_binary_dataloaders(
-                classes=MNIST_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=128,
-                random_seed=42000,  # Fixed seed for consistent dataset
-                normalize=True
-            )
-    else:
-        if USE_RANDOM_LABELS:
-            train_loader, test_loader = get_synth_dataloaders_random_labels(
-                batch_size=10,
-                random_seed=42  # Fixed seed for consistent dataset
-            )
-        else:
-            train_loader, test_loader = get_synth_dataloaders(
-                batch_size=10,
-                random_seed=42  # Fixed seed for consistent dataset
-            )
-    
-    print(f"Dataset created with fixed random seed (42) for consistency across all experiments")
-
     
     # Run the experiment with optimizations
     results = run_beta_experiments(
@@ -190,9 +188,7 @@ def main():
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
-        mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None,
-        train_loader=train_loader,  # Pass the pre-created dataloaders
-        test_loader=test_loader
+        mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None
     )
     
     # Print final summary
@@ -203,7 +199,7 @@ def main():
     print("-" * 110)
     
     # Get training set size for bounds computation
-    n_train = len(train_loader.dataset)
+    n_train = len(train_dataset)
     
     # Compute bounds and generalization errors for summary
     # The bounds functions will handle the need for beta=0 internally
@@ -236,88 +232,33 @@ def main():
     print(f"  ≈ 0: Bound is tight")
     print(f"  < 0: Bound is violated (should not happen with high probability)")
     
-    # Create comprehensive hyperparameter dictionary
-    from results_manager import create_hyperparameter_dict, save_or_merge_results
-    
-    hyperparams = create_hyperparameter_dict(
-        beta_values=beta_values,
-        num_repetitions=num_repetitions,
-        num_epochs=num_epochs,
-        a0=a0,
-        b=0.5,
-        sigma_gauss_prior=1000,
-        device=device,
-        dataset_type=DATASET_TYPE,
-        use_random_labels=USE_RANDOM_LABELS,
-        l_max=4.0,
-        mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None,
-        train_dataset_size=len(train_loader.dataset),
-        test_dataset_size=len(test_loader.dataset),
-        batch_size=train_loader.batch_size,
-        random_seed=42000,  # The seed used for dataset creation
-        normalize=True
-    )
-    
-    # Save results with hyperparameter tracking and potential merging
-    print(f"\n{'='*70}")
-    print("SAVING RESULTS WITH HYPERPARAMETER TRACKING")
-    print(f"{'='*70}")
-    
-    results_filename, was_merged = save_or_merge_results(results, hyperparams)
-    
-    if was_merged:
-        print("✅ Results merged with existing data!")
-        print("The saved file now contains results from multiple experiment runs.")
-        
-        # Load the merged results for plotting
-        from results_manager import load_existing_results
-        _, merged_results = load_existing_results(results_filename)
-        plot_results = merged_results
-    else:
-        print("💾 New results file created.")
-        plot_results = results
-    
-    # Plot the results (now with potentially merged data)
+    # Define experimental parameters for saving/plotting
+    # Use original beta values for filename generation and plotting (excluding auto-added beta=0)
     experiment_params = {
         'beta_values': beta_values,
         'num_repetitions': num_repetitions,
         'num_epochs': num_epochs,
-        'a0': a0,
-        'sigma_gauss_prior': 1000,
-        'dataset_type': DATASET_TYPE,
+        'a0': a0,  # Now supports variable a0
+        'sigma_gauss_prior': 10,
+        'dataset_type': dataset_type_str
     }
     
-    plot_beta_results(plot_results, n_train, **experiment_params)
+    # Save results to file with descriptive filename (using original beta values for filename)
+    save_results_to_file(results, n_train, **experiment_params)
     
-    # Also save in the old format for backward compatibility
-    print("\n📄 Also saving in legacy format for backward compatibility...")
-    save_results_to_file(plot_results, n_train, **experiment_params)
+    # Plot the results with descriptive filename (only plot original beta values, not beta=0)
+    plot_beta_results(results, n_train, **experiment_params)
     
     # Get the generated filenames for display
     from bounds import generate_filename
-    legacy_results_filename = generate_filename(file_type='results', extension='txt', **experiment_params)
+    results_filename = generate_filename(file_type='results', extension='txt', **experiment_params)
     plot_filename = generate_filename(file_type='plot', extension='png', **experiment_params)
     
     print(f"\n{'='*70}")
     print("EXPERIMENT COMPLETED!")
     print(f"Files generated:")
-    print(f"  - {results_filename} (enhanced results with hyperparameter tracking)")
-    print(f"  - results/{legacy_results_filename} (legacy format)")
+    print(f"  - results/{results_filename} (numerical results)")
     print(f"  - results/{plot_filename} (plots)")
-    
-    if was_merged:
-        print(f"\n🔄 RESULTS MERGED:")
-        print(f"  Your new results have been combined with existing results")
-        print(f"  that had identical hyperparameters.")
-        print(f"  The plots now show data from multiple experiment runs.")
-    
-    print(f"\n💡 HYPERPARAMETER TRACKING:")
-    print(f"  Future experiments with identical hyperparameters will be")
-    print(f"  automatically merged with these results.")
-    
-    from results_manager import generate_hyperparameter_hash
-    print(f"  Hyperparameter hash: {generate_hyperparameter_hash(hyperparams)}")
-    
     if TEST_MODE:
         print(f"\nTo run the full experiment:")
         print(f"  1. Set TEST_MODE = False in the script")

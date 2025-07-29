@@ -205,21 +205,27 @@ def get_synth_dataloaders_random_labels(
 
 
 def create_mnist_binary_dataset(
-    classes=[0, 1],
-    n_train_per_class: int = 1000,
-    n_test_per_class: int = 500,
+    classes=[[0], [1]],
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
     random_seed: int = None,
     normalize: bool = True
 ) -> Tuple[TensorDataset, TensorDataset]:
     """
-    Create a binary MNIST dataset with only specified classes.
+    Create a binary MNIST dataset with specified class groups.
+    
+    This function supports both simple binary classification (two individual classes)
+    and grouped binary classification (e.g., odd vs even digits).
     
     Args:
-        classes: List of two MNIST classes to use (default: [0, 1])
-        n_train_per_class: Number of training samples per class
-        n_test_per_class: Number of test samples per class
+        classes: Can be either:
+                - List of two individual classes: [0, 1] (backward compatibility)
+                - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+                - List of two class groups: [[0], [1]] (equivalent to [0, 1])
+        n_train_per_group: Number of training samples per group (distributed among classes in the group)
+        n_test_per_group: Number of test samples per group (distributed among classes in the group)
         random_seed: Random seed for reproducibility
-        normalize: Whether to normalize pixel values to [0, 1]
+        normalize: Whether to normalize pixel values
         
     Returns:
         Tuple[TensorDataset, TensorDataset]: Training and test datasets
@@ -227,6 +233,23 @@ def create_mnist_binary_dataset(
     if random_seed is not None:
         np.random.seed(random_seed)
         torch.manual_seed(random_seed)
+    
+    # Handle backward compatibility: convert [0, 1] to [[0], [1]]
+    if len(classes) == 2 and isinstance(classes[0], int):
+        classes = [[classes[0]], [classes[1]]]
+    
+    # Validate input
+    if len(classes) != 2:
+        raise ValueError("classes must contain exactly 2 groups")
+    
+    group_0_classes = classes[0] if isinstance(classes[0], list) else [classes[0]]
+    group_1_classes = classes[1] if isinstance(classes[1], list) else [classes[1]]
+    
+    # Ensure no overlap between groups
+    if set(group_0_classes) & set(group_1_classes):
+        raise ValueError("Class groups cannot have overlapping classes")
+    
+    all_classes = group_0_classes + group_1_classes
     
     # Define transforms
     if normalize:
@@ -245,29 +268,65 @@ def create_mnist_binary_dataset(
         root='./data', train=False, download=True, transform=transform
     )
     
-    # Filter for only the specified classes
-    def filter_classes(dataset, classes, n_per_class):
+    # Filter for the specified class groups
+    def filter_grouped_classes(dataset, group_0_classes, group_1_classes, n_per_group):
+        """Filter dataset to get samples from two class groups with binary labels."""
         data_list = []
         target_list = []
-        class_counts = {cls: 0 for cls in classes}
+        
+        # Count samples for each group
+        group_0_count = 0
+        group_1_count = 0
+        
+        # Calculate samples per class within each group
+        n_per_class_g0 = max(1, n_per_group // len(group_0_classes))
+        n_per_class_g1 = max(1, n_per_group // len(group_1_classes))
+        
+        # Track counts for each individual class
+        class_counts = {}
+        for cls in group_0_classes + group_1_classes:
+            class_counts[cls] = 0
         
         for data, target in dataset:
-            if target in classes and class_counts[target] < n_per_class:
-                data_list.append(data.flatten())  # Flatten 28x28 to 784
-                # Convert to binary: class[0] -> 0, class[1] -> 1
-                binary_target = 0 if target == classes[0] else 1
-                target_list.append(binary_target)
-                class_counts[target] += 1
+            # Check if we have enough samples for both groups
+            if group_0_count >= n_per_group and group_1_count >= n_per_group:
+                break
                 
-                # Stop when we have enough samples of each class
-                if all(count >= n_per_class for count in class_counts.values()):
-                    break
+            # Process group 0 classes (label = 0)
+            if target in group_0_classes and group_0_count < n_per_group:
+                target_n_per_class = n_per_class_g0
+                # Allow some flexibility to reach target group size
+                if group_0_count >= n_per_group - len(group_0_classes):
+                    target_n_per_class = n_per_group  # Allow more samples to fill group
+                    
+                if class_counts[target] < target_n_per_class:
+                    data_list.append(data.flatten())  # Flatten 28x28 to 784
+                    target_list.append(0)  # Group 0 -> label 0
+                    class_counts[target] += 1
+                    group_0_count += 1
+            
+            # Process group 1 classes (label = 1)
+            elif target in group_1_classes and group_1_count < n_per_group:
+                target_n_per_class = n_per_class_g1
+                # Allow some flexibility to reach target group size
+                if group_1_count >= n_per_group - len(group_1_classes):
+                    target_n_per_class = n_per_group  # Allow more samples to fill group
+                    
+                if class_counts[target] < target_n_per_class:
+                    data_list.append(data.flatten())  # Flatten 28x28 to 784
+                    target_list.append(1)  # Group 1 -> label 1
+                    class_counts[target] += 1
+                    group_1_count += 1
         
-        return torch.stack(data_list), torch.tensor(target_list, dtype=torch.float32)
+        return torch.stack(data_list), torch.tensor(target_list, dtype=torch.float32), class_counts
     
     # Create filtered datasets
-    train_data, train_targets = filter_classes(train_mnist, classes, n_train_per_class)
-    test_data, test_targets = filter_classes(test_mnist, classes, n_test_per_class)
+    train_data, train_targets, train_class_counts = filter_grouped_classes(
+        train_mnist, group_0_classes, group_1_classes, n_train_per_group
+    )
+    test_data, test_targets, test_class_counts = filter_grouped_classes(
+        test_mnist, group_0_classes, group_1_classes, n_test_per_group
+    )
     
     # Shuffle the data
     if random_seed is not None:
@@ -281,19 +340,22 @@ def create_mnist_binary_dataset(
     test_dataset = TensorDataset(test_data, test_targets)
     
     print(f"MNIST Binary Dataset Created:")
-    print(f"  Classes: {classes[0]} (label=0) and {classes[1]} (label=1)")
-    print(f"  Training samples: {len(train_dataset)} ({n_train_per_class} per class)")
-    print(f"  Test samples: {len(test_dataset)} ({n_test_per_class} per class)")
+    print(f"  Group 0 classes: {group_0_classes} (label=0)")
+    print(f"  Group 1 classes: {group_1_classes} (label=1)")
+    print(f"  Training samples: {len(train_dataset)} ({n_train_per_group} per group)")
+    print(f"  Test samples: {len(test_dataset)} ({n_test_per_group} per group)")
     print(f"  Input dimension: {train_data.shape[1]} (flattened 28x28)")
     print(f"  Normalized: {normalize}")
+    print(f"  Train class distribution: {train_class_counts}")
+    print(f"  Test class distribution: {test_class_counts}")
     
     return train_dataset, test_dataset
 
 
 def get_mnist_binary_dataloaders(
-    classes=[0, 1],
-    n_train_per_class: int = 1000,
-    n_test_per_class: int = 500,
+    classes=[[0], [1]],
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
     batch_size: int = 128,  # Increase default batch size for better GPU utilization
     random_seed: int = None,
     normalize: bool = True,
@@ -304,9 +366,11 @@ def get_mnist_binary_dataloaders(
     Create optimized data loaders for binary MNIST dataset.
     
     Args:
-        classes: List of two MNIST classes to use
-        n_train_per_class: Number of training samples per class
-        n_test_per_class: Number of test samples per class
+        classes: Can be either:
+                - List of two individual classes: [0, 1] (backward compatibility)
+                - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+        n_train_per_group: Number of training samples per group
+        n_test_per_group: Number of test samples per group
         batch_size: Batch size for data loaders (increased default for efficiency)
         random_seed: Random seed for reproducibility
         normalize: Whether to normalize pixel values
@@ -318,8 +382,8 @@ def get_mnist_binary_dataloaders(
     """
     train_dataset, test_dataset = create_mnist_binary_dataset(
         classes=classes,
-        n_train_per_class=n_train_per_class,
-        n_test_per_class=n_test_per_class,
+        n_train_per_group=n_train_per_group,
+        n_test_per_group=n_test_per_group,
         random_seed=random_seed,
         normalize=normalize
     )
@@ -335,6 +399,135 @@ def get_mnist_binary_dataloaders(
     )
     test_loader = DataLoader(
         test_dataset, 
+        batch_size=batch_size * 2,  # Larger batch for evaluation
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
+    )
+    
+    return train_loader, test_loader
+
+
+def create_mnist_binary_dataset_random_labels(
+    classes=[[0], [1]],
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
+    random_seed: int = None,
+    normalize: bool = True
+) -> Tuple[TensorDataset, TensorDataset]:
+    """
+    Create a binary MNIST dataset with random labels (no relationship to actual digits).
+    
+    This function creates the same input data as create_mnist_binary_dataset but with
+    completely random labels, breaking the relationship between image content and labels.
+    This is useful for testing generalization bounds when there's no learnable pattern.
+    
+    Args:
+        classes: Can be either:
+                - List of two individual classes: [0, 1] (backward compatibility)
+                - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+        n_train_per_group: Number of training samples per group
+        n_test_per_group: Number of test samples per group
+        random_seed: Random seed for reproducibility
+        normalize: Whether to normalize pixel values to [0, 1]
+        
+    Returns:
+        Tuple[TensorDataset, TensorDataset]: Training and test datasets with random labels
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+    
+    # First create the regular MNIST dataset to get the images
+    regular_train_dataset, regular_test_dataset = create_mnist_binary_dataset(
+        classes=classes,
+        n_train_per_group=n_train_per_group,
+        n_test_per_group=n_test_per_group,
+        random_seed=random_seed,
+        normalize=normalize
+    )
+    
+    # Extract the data (images) but replace labels with random ones
+    train_data = regular_train_dataset.tensors[0]  # Get images
+    test_data = regular_test_dataset.tensors[0]    # Get images
+    
+    # Generate completely random labels (50% probability for each class)
+    train_random_labels = torch.randint(0, 2, (len(train_data),), dtype=torch.float32)
+    test_random_labels = torch.randint(0, 2, (len(test_data),), dtype=torch.float32)
+    
+    # Create new datasets with random labels
+    train_dataset_random = TensorDataset(train_data, train_random_labels)
+    test_dataset_random = TensorDataset(test_data, test_random_labels)
+    
+    # Handle backward compatibility for printing
+    if len(classes) == 2 and isinstance(classes[0], int):
+        group_0_classes = [classes[0]]
+        group_1_classes = [classes[1]]
+    else:
+        group_0_classes = classes[0]
+        group_1_classes = classes[1]
+    
+    print(f"MNIST Binary Dataset with RANDOM LABELS Created:")
+    print(f"  Original group 0 classes: {group_0_classes} (images only, labels randomized)")
+    print(f"  Original group 1 classes: {group_1_classes} (images only, labels randomized)")
+    print(f"  Training samples: {len(train_dataset_random)} ({n_train_per_group} per group)")
+    print(f"  Test samples: {len(test_dataset_random)} ({n_test_per_group} per group)")
+    print(f"  Input dimension: {train_data.shape[1]} (flattened 28x28)")
+    print(f"  Normalized: {normalize}")
+    print(f"  Labels: Completely random (50% each class)")
+    
+    return train_dataset_random, test_dataset_random
+
+
+def get_mnist_binary_dataloaders_random_labels(
+    classes=[[0], [1]],
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
+    batch_size: int = 128,
+    random_seed: int = None,
+    normalize: bool = True,
+    num_workers: int = 4,
+    pin_memory: bool = True
+) -> Tuple[DataLoader, DataLoader]:
+    """
+    Create DataLoaders for MNIST binary dataset with random labels.
+    
+    Args:
+        classes: Can be either:
+                - List of two individual classes: [0, 1] (backward compatibility)
+                - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+        n_train_per_group: Number of training samples per group
+        n_test_per_group: Number of test samples per group
+        batch_size: Batch size for DataLoaders
+        random_seed: Random seed for reproducibility
+        normalize: Whether to normalize pixel values
+        num_workers: Number of worker processes for data loading
+        pin_memory: Whether to pin memory for faster GPU transfer
+        
+    Returns:
+        Tuple[DataLoader, DataLoader]: Training and test DataLoaders with random labels
+    """
+    train_dataset, test_dataset = create_mnist_binary_dataset_random_labels(
+        classes=classes,
+        n_train_per_group=n_train_per_group,
+        n_test_per_group=n_test_per_group,
+        random_seed=random_seed,
+        normalize=normalize
+    )
+    
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
+    )
+    test_loader = DataLoader(
+        test_dataset,
         batch_size=batch_size * 2,  # Larger batch for evaluation
         shuffle=False,
         num_workers=num_workers,

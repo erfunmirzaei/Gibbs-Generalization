@@ -18,7 +18,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def plot_beta_results(results, filename=None, beta_values=None, num_repetitions=None, num_epochs=None, 
+def plot_beta_results(results, n, filename=None, beta_values=None, num_repetitions=None, num_epochs=None, 
                      a0=None, sigma_gauss_prior=None, dataset_type='synth'):
     """
     Plot the generalization errors with confidence intervals, generalization bounds, 
@@ -26,6 +26,7 @@ def plot_beta_results(results, filename=None, beta_values=None, num_repetitions=
     
     Args:
         results: Dictionary containing experimental results for each beta value
+        n: Training set size (required for bounds computation)
         filename: Optional custom filename. If None, generates descriptive filename
         beta_values: List of beta values (for filename generation). If None, uses results.keys()
         num_repetitions: Number of repetitions per beta (for filename generation)
@@ -49,12 +50,12 @@ def plot_beta_results(results, filename=None, beta_values=None, num_repetitions=
     
     # Compute all analyses
     gen_errors = compute_generalization_errors(all_beta_values, results)
-    bounds = compute_generalization_bound(beta_values, results, loss_type='bce')
-    zero_one_bounds = compute_generalization_bound(beta_values, results, loss_type='zero_one')
-    individual_bounds = compute_individual_generalization_bounds(beta_values, results, loss_type='bce')
-    individual_zero_one_bounds = compute_individual_generalization_bounds(beta_values, results, loss_type='zero_one')
-    kl_analysis = compute_kl_divergence_analysis(beta_values, results)
-    kl_analysis_zo = compute_kl_divergence_analysis(beta_values, results, loss_type='zero_one')
+    bounds = compute_generalization_bound(beta_values, results, n, loss_type='bce')
+    zero_one_bounds = compute_generalization_bound(beta_values, results, n, loss_type='zero_one')
+    individual_bounds = compute_individual_generalization_bounds(beta_values, results, n, loss_type='bce')
+    individual_zero_one_bounds = compute_individual_generalization_bounds(beta_values, results, n, loss_type='zero_one')
+    kl_analysis = compute_kl_divergence_analysis(beta_values, results, n)
+    kl_analysis_zo = compute_kl_divergence_analysis(beta_values, results, n, loss_type='zero_one')
     
     # Extract data for plotting
     bce_gen_errors = [gen_errors[beta]['bce_gen_error'] for beta in beta_values]
@@ -125,10 +126,8 @@ def plot_beta_results(results, filename=None, beta_values=None, num_repetitions=
     ax1.set_title('BCE: Train/Test Losses & KL Analysis')
     ax1.legend(fontsize=8)
     ax1.grid(True, alpha=0.3)
-    if 0 in beta_values:
-        ax1.set_xscale('symlog', linthresh=1)
-    else:
-        ax1.set_xscale('log')
+    # Use linear scale for x-axis
+    ax1.set_xscale('linear')
     
     # Plot 2: Zero-One Train/Test + KL Analysis (no generalization bounds/errors)
     ax2.errorbar(beta_values, train_01_means, yerr=train_01_stds, 
@@ -147,10 +146,8 @@ def plot_beta_results(results, filename=None, beta_values=None, num_repetitions=
     ax2.set_title('Zero-One: Train/Test Losses & KL Analysis')
     ax2.legend(fontsize=8)
     ax2.grid(True, alpha=0.3)
-    if 0 in beta_values:
-        ax2.set_xscale('symlog', linthresh=1)
-    else:
-        ax2.set_xscale('log')
+    # Use linear scale for x-axis
+    ax2.set_xscale('linear')
     
     plt.tight_layout()
     
@@ -284,11 +281,8 @@ def plot_bound_comparison(beta_values, results, loss_type='bce', save_path=None)
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    # Handle beta=0 case with symlog scale
-    if 0 in beta_values:
-        plt.xscale('symlog', linthresh=1)
-    else:
-        plt.xscale('log')
+    # Use linear scale for x-axis
+    plt.xscale('linear')
     
     plt.tight_layout()
     
@@ -337,11 +331,8 @@ def plot_bound_tightness(beta_values, results, save_path=None):
     plt.legend()
     plt.grid(True, alpha=0.3)
     
-    # Handle beta=0 case with symlog scale
-    if 0 in beta_values:
-        plt.xscale('symlog', linthresh=1)
-    else:
-        plt.xscale('log')
+    # Use linear scale for x-axis
+    plt.xscale('linear')
     
     plt.tight_layout()
     

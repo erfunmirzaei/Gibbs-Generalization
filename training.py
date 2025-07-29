@@ -13,7 +13,7 @@ from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
 from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
 from sgld import SGLD
 from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
-                    get_mnist_binary_dataloaders)
+                    get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels)
 
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
@@ -58,6 +58,10 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         Tuple containing: (train_losses, test_losses, train_accuracies, test_accuracies, 
                           train_zero_one_losses, test_zero_one_losses, learning_rates)
     """
+    # Convert device to torch.device if it's a string
+    if isinstance(device, str):
+        device = torch.device(device)
+    
     model = model.to(device)
     criterion = BoundedCrossEntropyLoss(ell_max=l_max)
     # criterion = TangentLoss()
@@ -214,7 +218,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
 def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000, 
                          a0=1e-1, b=0.5, sigma_gauss_prior=1000000, 
                          device='cpu', dataset_type='synth', use_random_labels=False,
-                         l_max=2.0, mnist_classes=None):
+                         l_max=2.0, mnist_classes=None, train_loader=None, test_loader=None):
     """
     Run experiments across different beta values with multiple repetitions.
     
@@ -238,6 +242,9 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         dataset_type: 'synth' or 'mnist'
         use_random_labels: If True, use random labels instead of linear relationship
         l_max: Maximum loss value for transformation to [0,1] interval
+        mnist_classes: MNIST classes specification (only used if dataloaders not provided)
+        train_loader: Pre-created training DataLoader (if None, will create based on other params)
+        test_loader: Pre-created test DataLoader (if None, will create based on other params)
         
     Returns:
         Dictionary containing results for each beta value (including beta=0 if not present)
@@ -308,27 +315,42 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         for rep in range(num_repetitions):
             print(f"Repetition {rep+1}/{num_repetitions} for beta = {beta}")
             
-            # Create fresh dataset and model for each repetition
-            if dataset_type == 'mnist':
-                mnist_classes = [0, 1]
-                train_loader, test_loader = get_mnist_binary_dataloaders(
-                    classes=mnist_classes,
-                    n_train_per_class=5000,
-                    n_test_per_class=1000,
-                    batch_size=128,
-                    random_seed=rep,  # Different seed for each repetition
-                    normalize=True
-                )
-            elif use_random_labels:
-                train_loader, test_loader = get_synth_dataloaders_random_labels(
-                    batch_size=10, 
-                    random_seed=rep  # Different seed for each repetition
-                )
+            # Use provided dataloaders or create fresh dataset for each repetition
+            if train_loader is not None and test_loader is not None:
+                # Use the pre-created dataloaders (same dataset for all repetitions)
+                current_train_loader = train_loader
+                current_test_loader = test_loader
             else:
-                train_loader, test_loader = get_synth_dataloaders(
-                    batch_size=10, 
-                    random_seed=rep  # Different seed for each repetition
-                )
+                # Create fresh dataset and model for each repetition (legacy behavior)
+                if dataset_type == 'mnist':
+                    if use_random_labels:
+                        current_train_loader, current_test_loader = get_mnist_binary_dataloaders_random_labels(
+                            classes=mnist_classes if mnist_classes else [[0], [1]],
+                            n_train_per_group=5000,
+                            n_test_per_group=1000,
+                            batch_size=128,
+                            random_seed=rep,  # Different seed for each repetition
+                            normalize=True
+                        )
+                    else:
+                        current_train_loader, current_test_loader = get_mnist_binary_dataloaders(
+                            classes=mnist_classes if mnist_classes else [[0], [1]],
+                            n_train_per_group=5000,
+                            n_test_per_group=1000,
+                            batch_size=128,
+                            random_seed=rep,  # Different seed for each repetition
+                            normalize=True
+                        )
+                elif use_random_labels:
+                    current_train_loader, current_test_loader = get_synth_dataloaders_random_labels(
+                        batch_size=10, 
+                        random_seed=rep  # Different seed for each repetition
+                    )
+                else:
+                    current_train_loader, current_test_loader = get_synth_dataloaders(
+                        batch_size=10, 
+                        random_seed=rep  # Different seed for each repetition
+                    )
             
             # Create fresh model 
             if dataset_type == 'mnist':
@@ -340,8 +362,8 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             # Train the model
             train_losses, test_losses, _, _, train_01_losses, test_01_losses, _ = train_sgld_model(
                 model=model,
-                train_loader=train_loader,
-                test_loader=test_loader,
+                train_loader=current_train_loader,
+                test_loader=current_test_loader,
                 num_epochs=current_epochs,
                 a0=current_a0,
                 b=b,
