@@ -260,13 +260,36 @@ def create_mnist_binary_dataset(
     else:
         transform = transforms.Compose([transforms.ToTensor()])
     
-    # Download MNIST datasets
-    train_mnist = torchvision.datasets.MNIST(
-        root='./data', train=True, download=True, transform=transform
-    )
-    test_mnist = torchvision.datasets.MNIST(
-        root='./data', train=False, download=True, transform=transform
-    )
+    # Download MNIST datasets with error handling
+    import os
+    import shutil
+    
+    data_root = './data'
+    max_retries = 3
+    
+    for attempt in range(max_retries):
+        try:
+            train_mnist = torchvision.datasets.MNIST(
+                root=data_root, train=True, download=True, transform=transform
+            )
+            test_mnist = torchvision.datasets.MNIST(
+                root=data_root, train=False, download=True, transform=transform
+            )
+            # Test that we can access the data
+            _ = len(train_mnist)
+            _ = len(test_mnist)
+            break
+        except Exception as e:
+            print(f"Attempt {attempt + 1}/{max_retries}: MNIST download/loading failed: {e}")
+            if attempt < max_retries - 1:
+                # Remove potentially corrupted data and retry
+                mnist_path = os.path.join(data_root, 'MNIST')
+                if os.path.exists(mnist_path):
+                    print(f"Removing corrupted MNIST data at {mnist_path}")
+                    shutil.rmtree(mnist_path)
+                print("Retrying download...")
+            else:
+                raise RuntimeError(f"Failed to download MNIST data after {max_retries} attempts: {e}")
     
     # Filter for the specified class groups
     def filter_grouped_classes(dataset, group_0_classes, group_1_classes, n_per_group):
