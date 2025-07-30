@@ -1,6 +1,6 @@
 """
 Main experim# Test mode flag - set to False for full experiment
-TEST_MODE = False
+TEST_MODE = True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = Falsecript for the Gibbs generalization bound experiments.
@@ -25,7 +25,7 @@ from plot_utils import plot_beta_results
 TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = False
+USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'

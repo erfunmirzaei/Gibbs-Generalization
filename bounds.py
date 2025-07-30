@@ -706,40 +706,46 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
     
     for current_beta in beta_values:
         # Get individual train and test errors for the specified loss type
-        individual_train_losses = results[current_beta][raw_key]
-        individual_test_losses = results[current_beta][test_raw_key]
-        M = len(individual_train_losses)  # Number of repetitions
-        
+        individual_train_losses_bce = results[current_beta]['raw_train_bce']
+        individual_test_losses_bce = results[current_beta]['raw_test_bce']
+        individual_train_losses_01 = results[current_beta]['raw_train_01']
+        individual_test_losses_01 = results[current_beta]['raw_test_01']
+        M = len(individual_train_losses_bce)  # Number of repetitions
+
         # Compute KL divergence for each repetition
         individual_kl_values = []
         individual_kl_bounds = []
         individual_test_bounds = []
         
         for i in range(M):
-            train_error = individual_train_losses[i]
-            test_error = individual_test_losses[i]
+            train_error_bce = individual_train_losses_bce[i]
+            test_error_bce = individual_test_losses_bce[i]
+            train_error_01 = individual_train_losses_01[i]
+            test_error_01 = individual_test_losses_01[i]
 
-            
             # Compute KL divergence between train and test
             try:
                 # Add epsilon handling to prevent numerical issues with zero values
                 eps = 1e-10
-                kl_div = kl(train_error, test_error, eps)
+                if loss_type == 'bce':
+                    kl_div = kl(train_error_bce, test_error_bce, eps)
+                else:  # zero_one
+                    kl_div = kl(train_error_01, test_error_01, eps)
                 # Check if the result is valid (not NaN or infinite)
                 if np.isnan(kl_div) or np.isinf(kl_div):
-                    print(f"WARNING: Invalid KL divergence for beta={current_beta}, train={train_error}, test={test_error}")
+                    print(f"WARNING: Invalid KL divergence for beta={current_beta}, train_bce={train_error_bce}, test_bce={test_error_bce}, train_01={train_error_01}, test_01={test_error_01}")
                     individual_kl_values.append(0.0)
                 else:
                     individual_kl_values.append(kl_div)
             except Exception as e:
                 # Handle edge cases with more detailed error information
-                print(f"WARNING: KL computation failed for beta={current_beta}, train={train_error}, test={test_error}: {e}")
+                print(f"WARNING: KL computation failed for beta={current_beta}, train_bce={train_error_bce}, test_bce={test_error_bce}, train_01={train_error_01}, test_01={test_error_01}: {e}")
                 individual_kl_values.append(0.0)
                 continue
             
             # Use the same unified bound computation approach as individual bounds
             bound_result = _compute_single_bound(
-                emp_loss=train_error,
+                emp_loss=train_error_bce,
                 current_beta=current_beta,
                 results=results,
                 integration_betas=integration_betas,
@@ -759,18 +765,21 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
             try:
                 if kl_bound > 0:
                     eps = 1e-10
-                    test_bound = invert_kl(train_error, kl_bound, eps)
-                    # Check if the result is valid
-                    if np.isnan(test_bound) or np.isinf(test_bound):
-                        print(f"WARNING: Invalid test bound from invert_kl for beta={current_beta}, train={train_error}, kl_bound={kl_bound}")
-                        test_bound = max(train_error, 1.0)  # Use reasonable fallback
+                    if loss_type == 'bce':
+                        test_bound = invert_kl(train_error_bce, kl_bound, eps)
+                    else:  # zero_one
+                        test_bound = invert_kl(train_error_01, kl_bound, eps)
+                # Check if the result is valid
+                if np.isnan(test_bound) or np.isinf(test_bound):
+                    print(f"WARNING: Invalid test bound from invert_kl for beta={current_beta}, train_bce={train_error_bce}, train_01={train_error_01}, kl_bound={kl_bound}: {e}")
+                    test_bound = max(train_error_bce, train_error_01, 1.0)  # Use reasonable fallback
                 else:
-                    test_bound = train_error  # If no bound, use train error
+                    test_bound = train_error_bce  # If no bound, use train error
                 individual_test_bounds.append(test_bound)
             except Exception as e:
-                print(f"WARNING: invert_kl failed for beta={current_beta}, train={train_error}, kl_bound={kl_bound}: {e}")
-                individual_test_bounds.append(max(train_error, 1.0))  # Fallback bound
-        
+                print(f"WARNING: invert_kl failed for beta={current_beta}, train_bce={train_error_bce}, train_01={train_error_01}, kl_bound={kl_bound}: {e}")
+                individual_test_bounds.append(max(train_error_bce, train_error_01, 1.0))  # Fallback bound
+
         # Compute statistics over all repetitions
         individual_kl_values = np.array(individual_kl_values)
         individual_kl_bounds = np.array(individual_kl_bounds)
