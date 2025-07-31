@@ -694,16 +694,6 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
     # Filter to only include betas from 0 up to the maximum requested beta
     integration_betas = [b for b in all_available_betas if 0.0 <= b <= max_requested_beta]
     
-    # Choose the appropriate loss type keys
-    if loss_type == 'bce':
-        train_key = 'train_bce_mean'
-        raw_key = 'raw_train_bce'
-        test_raw_key = 'raw_test_bce'
-    else:  # zero_one
-        train_key = 'train_01_mean'
-        raw_key = 'raw_train_01'
-        test_raw_key = 'raw_test_01'
-    
     for current_beta in beta_values:
         # Get individual train and test errors for the specified loss type
         individual_train_losses_bce = results[current_beta]['raw_train_bce']
@@ -749,7 +739,7 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
                 current_beta=current_beta,
                 results=results,
                 integration_betas=integration_betas,
-                train_key=train_key,
+                train_key='train_bce_mean',
                 n=n,
                 delta=0.05,
                 delta_prime=0.05,
@@ -769,10 +759,10 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
                         test_bound = invert_kl(train_error_bce, kl_bound, eps)
                     else:  # zero_one
                         test_bound = invert_kl(train_error_01, kl_bound, eps)
-                # Check if the result is valid
-                if np.isnan(test_bound) or np.isinf(test_bound):
-                    print(f"WARNING: Invalid test bound from invert_kl for beta={current_beta}, train_bce={train_error_bce}, train_01={train_error_01}, kl_bound={kl_bound}: {e}")
-                    test_bound = max(train_error_bce, train_error_01, 1.0)  # Use reasonable fallback
+                    # Check if the result is valid
+                    if np.isnan(test_bound) or np.isinf(test_bound):
+                        print(f"WARNING: Invalid test bound from invert_kl for beta={current_beta}, train_bce={train_error_bce}, train_01={train_error_01}, kl_bound={kl_bound}: {e}")
+                        test_bound = max(train_error_bce, train_error_01, 1.0)  # Use reasonable fallback
                 else:
                     test_bound = train_error_bce  # If no bound, use train error
                 individual_test_bounds.append(test_bound)
