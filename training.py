@@ -9,6 +9,9 @@ import numpy as np
 import torch
 import torch.optim as optim
 import time
+import json
+import os
+from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
 from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
 from sgld import SGLD
@@ -215,15 +218,90 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     return train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates
 
 
+def save_checkpoint(results, checkpoint_path, experiment_config, completed_repetitions):
+    """
+    Save experiment checkpoint to allow resuming interrupted runs.
+    
+    Args:
+        results: Current results dictionary
+        checkpoint_path: Path to save checkpoint file
+        experiment_config: Configuration dictionary
+        completed_repetitions: Number of completed repetitions
+    """
+    checkpoint_data = {
+        'results': results,
+        'experiment_config': experiment_config,
+        'completed_repetitions': completed_repetitions,
+        'timestamp': datetime.now().isoformat(),
+        'version': '1.0'
+    }
+    
+    # Create checkpoint directory if it doesn't exist
+    os.makedirs(os.path.dirname(checkpoint_path), exist_ok=True)
+    
+    # Save with temporary name first, then rename (atomic operation)
+    temp_path = checkpoint_path + '.tmp'
+    with open(temp_path, 'w') as f:
+        json.dump(checkpoint_data, f, indent=2)
+    os.rename(temp_path, checkpoint_path)
+    
+    print(f"💾 Checkpoint saved: {checkpoint_path}")
+
+
+def load_checkpoint(checkpoint_path):
+    """
+    Load experiment checkpoint to resume interrupted runs.
+    
+    Args:
+        checkpoint_path: Path to checkpoint file
+        
+    Returns:
+        Tuple of (results, experiment_config, completed_repetitions) or (None, None, 0) if no checkpoint
+    """
+    if not os.path.exists(checkpoint_path):
+        print(f"No checkpoint found at {checkpoint_path}")
+        return None, None, 0
+    
+    try:
+        with open(checkpoint_path, 'r') as f:
+            checkpoint_data = json.load(f)
+        
+        results = checkpoint_data['results']
+        experiment_config = checkpoint_data['experiment_config'] 
+        completed_repetitions = checkpoint_data['completed_repetitions']
+        timestamp = checkpoint_data.get('timestamp', 'unknown')
+        
+        print(f"📂 Checkpoint loaded from {timestamp}")
+        print(f"🔄 Resuming from repetition {completed_repetitions + 1}")
+        
+        return results, experiment_config, completed_repetitions
+        
+    except Exception as e:
+        print(f"❌ Error loading checkpoint: {e}")
+        return None, None, 0
+
+
+def generate_checkpoint_filename(experiment_config):
+    """Generate a descriptive checkpoint filename based on experiment configuration."""
+    beta_str = f"beta{min(experiment_config['beta_values'])}-{max(experiment_config['beta_values'])}"
+    dataset_str = experiment_config['dataset_type']
+    if experiment_config.get('use_random_labels', False):
+        dataset_str += '_random'
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"checkpoints/checkpoint_{dataset_str}_{beta_str}_rep{experiment_config['num_repetitions']}_{timestamp}.json"
+
+
 def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000, 
                          a0=1e-1, b=0.5, sigma_gauss_prior=1000000, 
                          device='cpu', dataset_type='synth', use_random_labels=False,
-                         l_max=2.0, mnist_classes=None, train_loader=None, test_loader=None):
+                         l_max=2.0, mnist_classes=None, train_loader=None, test_loader=None,
+                         checkpoint_path=None, save_every=1):
     """
     Run experiments across different beta values with multiple repetitions.
     
-    Automatically includes beta=0 if not present, as it's required for proper
-    generalization bound computation (beta=0 corresponds to pure noise).
+    Modified to run all betas for each repetition, then move to next repetition.
+    Includes checkpoint saving/loading for resuming interrupted runs.
     
     Args:
         beta_values: List of beta (inverse temperature) values to test
@@ -245,6 +323,8 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         mnist_classes: MNIST classes specification (only used if dataloaders not provided)
         train_loader: Pre-created training DataLoader (if None, will create based on other params)
         test_loader: Pre-created test DataLoader (if None, will create based on other params)
+        checkpoint_path: Path to checkpoint file (if None, auto-generated)
+        save_every: Save checkpoint every N repetitions (default: 1)
         
     Returns:
         Dictionary containing results for each beta value (including beta=0 if not present)
@@ -274,13 +354,53 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             raise ValueError(f"a0 must be int, float, dict, or callable, got {type(a0)}")
     
     # Ensure beta=0 is included for proper bound computation
-    # Beta=0 corresponds to pure SGLD noise
     extended_beta_values = list(beta_values)
     if 0.0 not in extended_beta_values and 0 not in extended_beta_values:
         extended_beta_values = [0.0] + extended_beta_values
         print(f"Added beta=0 for proper generalization bound computation")
     
-    results = {}
+    # Create experiment configuration for checkpointing
+    experiment_config = {
+        'beta_values': beta_values,
+        'extended_beta_values': extended_beta_values,
+        'num_repetitions': num_repetitions,
+        'num_epochs': num_epochs,
+        'a0': a0,
+        'b': b,
+        'sigma_gauss_prior': sigma_gauss_prior,
+        'device': device,
+        'dataset_type': dataset_type,
+        'use_random_labels': use_random_labels,
+        'l_max': l_max,
+        'mnist_classes': mnist_classes,
+        'train_dataset_size': len(train_loader.dataset) if train_loader else None,
+        'test_dataset_size': len(test_loader.dataset) if test_loader else None
+    }
+    
+    # Generate checkpoint path if not provided
+    if checkpoint_path is None:
+        checkpoint_path = generate_checkpoint_filename(experiment_config)
+    
+    # Try to load existing checkpoint
+    results, loaded_config, completed_repetitions = load_checkpoint(checkpoint_path)
+    
+    if results is not None:
+        print(f"🔄 Resuming experiment from repetition {completed_repetitions + 1}/{num_repetitions}")
+        # Verify configuration compatibility
+        if loaded_config['extended_beta_values'] != extended_beta_values:
+            print("⚠️  Warning: Beta values in checkpoint don't match current configuration")
+    else:
+        print(f"🆕 Starting new experiment")
+        completed_repetitions = 0
+        # Initialize results structure
+        results = {}
+        for beta in extended_beta_values:
+            results[beta] = {
+                'raw_train_bce': [],
+                'raw_test_bce': [],
+                'raw_train_01': [],
+                'raw_test_01': []
+            }
     
     print(f"\nConfiguration:")
     print(f"Epochs per beta:")
@@ -292,28 +412,23 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
     for beta in sorted(extended_beta_values):
         current_a0 = get_a0_for_beta(beta, a0)
         print(f"  Beta {beta}: {current_a0}")
+    print(f"Checkpoint path: {checkpoint_path}")
+    print(f"Save frequency: every {save_every} repetitions")
     print()
     
-    for beta in sorted(extended_beta_values):
-        current_epochs = get_epochs_for_beta(beta, num_epochs)
-        current_a0 = get_a0_for_beta(beta, a0)
-        print(f"\n{'='*60}")
-        if beta == 0.0:
-            print(f"Running experiments for beta = {beta} (Pure SGLD noise)")
-        else:
-            print(f"Running experiments for beta = {beta}")
-        print(f"Training epochs: {current_epochs}")
-        print(f"Learning rate (a0): {current_a0}")
-        print(f"{'='*60}")
+    # Main experiment loop: repetitions first, then betas
+    for rep in range(completed_repetitions, num_repetitions):
+        print(f"\n{'='*80}")
+        print(f"REPETITION {rep+1}/{num_repetitions}")
+        print(f"{'='*80}")
         
-        # Storage for this beta value
-        final_train_losses = []
-        final_test_losses = []
-        final_train_01_losses = []
-        final_test_01_losses = []
-        
-        for rep in range(num_repetitions):
-            print(f"Repetition {rep+1}/{num_repetitions} for beta = {beta}")
+        # Run all beta values for this repetition
+        for beta in sorted(extended_beta_values):
+            current_epochs = get_epochs_for_beta(beta, num_epochs)
+            current_a0 = get_a0_for_beta(beta, a0)
+            
+            print(f"\n--- Beta = {beta} (Rep {rep+1}) ---")
+            print(f"Epochs: {current_epochs}, Learning rate: {current_a0}")
             
             # Use provided dataloaders or create fresh dataset for each repetition
             if train_loader is not None and test_loader is not None:
@@ -321,7 +436,7 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 current_train_loader = train_loader
                 current_test_loader = test_loader
             else:
-                # Create fresh dataset and model for each repetition (legacy behavior)
+                # Create fresh dataset for each repetition (legacy behavior)
                 if dataset_type == 'mnist':
                     if use_random_labels:
                         current_train_loader, current_test_loader = get_mnist_binary_dataloaders_random_labels(
@@ -352,12 +467,11 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                         random_seed=rep  # Different seed for each repetition
                     )
             
-            # Create fresh model 
+            # Create fresh model for each beta-repetition combination
             if dataset_type == 'mnist':
                 model = MNISTNN(input_dim=28*28, hidden_dim=500, output_dim=1)
             else:
-                # For SYNTH dataset, use the SynthNN model
-                model = SynthNN(input_dim=4, hidden_dim=500) # TODO: Adjust hidden_dim as needed
+                model = SynthNN(input_dim=4, hidden_dim=500)
             
             # Train the model
             train_losses, test_losses, _, _, train_01_losses, test_01_losses, _ = train_sgld_model(
@@ -375,45 +489,82 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             )
             
             # Store final values (last epoch)
-            final_train_losses.append(train_losses[-1])
-            final_test_losses.append(test_losses[-1])
-            final_train_01_losses.append(train_01_losses[-1])
-            final_test_01_losses.append(test_01_losses[-1])
+            results[beta]['raw_train_bce'].append(train_losses[-1])
+            results[beta]['raw_test_bce'].append(test_losses[-1])
+            results[beta]['raw_train_01'].append(train_01_losses[-1])
+            results[beta]['raw_test_01'].append(test_01_losses[-1])
             
-            if (rep + 1) % 10 == 0:
-                print(f"  Completed {rep+1} repetitions for beta = {beta}")
+            print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
+                  f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
         
-        # Convert to numpy arrays for easier computation
-        final_train_losses = np.array(final_train_losses)
-        final_test_losses = np.array(final_test_losses)
-        final_train_01_losses = np.array(final_train_01_losses)
-        final_test_01_losses = np.array(final_test_01_losses)
+        # Save checkpoint after completing this repetition
+        if (rep + 1) % save_every == 0 or rep + 1 == num_repetitions:
+            # Compute statistics for checkpoint
+            checkpoint_results = {}
+            for beta in extended_beta_values:
+                raw_train_bce = np.array(results[beta]['raw_train_bce'])
+                raw_test_bce = np.array(results[beta]['raw_test_bce'])
+                raw_train_01 = np.array(results[beta]['raw_train_01'])
+                raw_test_01 = np.array(results[beta]['raw_test_01'])
+                
+                checkpoint_results[beta] = {
+                    'train_bce_mean': np.mean(raw_train_bce),
+                    'train_bce_var': np.var(raw_train_bce),
+                    'train_bce_std': np.std(raw_train_bce),
+                    'test_bce_mean': np.mean(raw_test_bce),
+                    'test_bce_var': np.var(raw_test_bce),
+                    'test_bce_std': np.std(raw_test_bce),
+                    'train_01_mean': np.mean(raw_train_01),
+                    'train_01_var': np.var(raw_train_01),
+                    'train_01_std': np.std(raw_train_01),
+                    'test_01_mean': np.mean(raw_test_01),
+                    'test_01_var': np.var(raw_test_01),
+                    'test_01_std': np.std(raw_test_01),
+                    'raw_train_bce': results[beta]['raw_train_bce'],
+                    'raw_test_bce': results[beta]['raw_test_bce'],
+                    'raw_train_01': results[beta]['raw_train_01'],
+                    'raw_test_01': results[beta]['raw_test_01']
+                }
+            
+            save_checkpoint(checkpoint_results, checkpoint_path, experiment_config, rep + 1)
         
-        # Compute statistics
-        results[beta] = {
-            'train_bce_mean': np.mean(final_train_losses),
-            'train_bce_var': np.var(final_train_losses),
-            'train_bce_std': np.std(final_train_losses),
-            'test_bce_mean': np.mean(final_test_losses),
-            'test_bce_var': np.var(final_test_losses),
-            'test_bce_std': np.std(final_test_losses),
-            'train_01_mean': np.mean(final_train_01_losses),
-            'train_01_var': np.var(final_train_01_losses),
-            'train_01_std': np.std(final_train_01_losses),
-            'test_01_mean': np.mean(final_test_01_losses),
-            'test_01_var': np.var(final_test_01_losses),
-            'test_01_std': np.std(final_test_01_losses),
-            'raw_train_bce': final_train_losses.tolist(),
-            'raw_test_bce': final_test_losses.tolist(),
-            'raw_train_01': final_train_01_losses.tolist(),
-            'raw_test_01': final_test_01_losses.tolist()
+        print(f"\n✅ Completed repetition {rep+1}/{num_repetitions}")
+        
+        # Print interim summary
+        print(f"\nCurrent results after {rep+1} repetitions:")
+        for beta in sorted(extended_beta_values):
+            n_reps = len(results[beta]['raw_train_bce'])
+            if n_reps > 0:
+                train_mean = np.mean(results[beta]['raw_train_bce'])
+                test_mean = np.mean(results[beta]['raw_test_bce'])
+                print(f"  Beta {beta}: Train BCE: {train_mean:.4f}, Test BCE: {test_mean:.4f} ({n_reps} reps)")
+    
+    # Compute final statistics
+    final_results = {}
+    for beta in extended_beta_values:
+        raw_train_bce = np.array(results[beta]['raw_train_bce'])
+        raw_test_bce = np.array(results[beta]['raw_test_bce'])
+        raw_train_01 = np.array(results[beta]['raw_train_01'])
+        raw_test_01 = np.array(results[beta]['raw_test_01'])
+        
+        final_results[beta] = {
+            'train_bce_mean': np.mean(raw_train_bce),
+            'train_bce_var': np.var(raw_train_bce),
+            'train_bce_std': np.std(raw_train_bce),
+            'test_bce_mean': np.mean(raw_test_bce),
+            'test_bce_var': np.var(raw_test_bce),
+            'test_bce_std': np.std(raw_test_bce),
+            'train_01_mean': np.mean(raw_train_01),
+            'train_01_var': np.var(raw_train_01),
+            'train_01_std': np.std(raw_train_01),
+            'test_01_mean': np.mean(raw_test_01),
+            'test_01_var': np.var(raw_test_01),
+            'test_01_std': np.std(raw_test_01),
+            'raw_train_bce': results[beta]['raw_train_bce'],
+            'raw_test_bce': results[beta]['raw_test_bce'],
+            'raw_train_01': results[beta]['raw_train_01'],
+            'raw_test_01': results[beta]['raw_test_01']
         }
-        
-        print(f"Beta {beta} completed:")
-        print(f"  Train BCE: {results[beta]['train_bce_mean']:.4f} ± {results[beta]['train_bce_std']:.4f} (var: {results[beta]['train_bce_var']:.6f})")
-        print(f"  Test BCE:  {results[beta]['test_bce_mean']:.4f} ± {results[beta]['test_bce_std']:.4f} (var: {results[beta]['test_bce_var']:.6f})")
-        print(f"  Train 0-1: {results[beta]['train_01_mean']:.4f} ± {results[beta]['train_01_std']:.4f} (var: {results[beta]['train_01_var']:.6f})")
-        print(f"  Test 0-1:  {results[beta]['test_01_mean']:.4f} ± {results[beta]['test_01_std']:.4f} (var: {results[beta]['test_01_var']:.6f})")
     
     print(f"\n{'='*60}")
     print(f"EXPERIMENT SUMMARY")
