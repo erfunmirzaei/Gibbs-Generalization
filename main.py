@@ -98,10 +98,10 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [250,500] #,1000, 1500, 2000, 4000,8000,16000]  # Full MNIST experiment
-            num_repetitions = 1  # Full experiment
-            num_epochs = {0: 1, 250: 500, 500: 500, 1000: 1000, 1500: 1500, 2000: 2000, 4000: 4000,}# 8000: 8000, 16000: 10000}   
-            a0 = {0: 1e-10, 250: 0.001, 500: 0.005, 1000: 0.01, 1500: 0.02, 2000: 0.05, 4000: 0.1, }#8000: 0.1, 16000: 0.2}
+            beta_values = [250,500,1000, 1500, 2000, 4000,8000,16000]  # Full MNIST experiment
+            num_repetitions = 10  # Full experiment
+            num_epochs = {0: 1, 250: 500, 500: 500, 1000: 1000, 1500: 1500, 2000: 2000, 4000: 4000, 8000: 8000, 16000: 10000}   
+            a0 = {0: 1e-10, 250: 0.001, 500: 0.005, 1000: 0.01, 1500: 0.02, 2000: 0.05, 4000: 0.1, 8000: 0.1, 16000: 0.2}
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
