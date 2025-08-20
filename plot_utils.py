@@ -54,7 +54,7 @@ def plot_beta_results(results, n, filename=None, beta_values=None, num_repetitio
     zero_one_bounds = compute_generalization_bound(beta_values, results, n, loss_type='zero_one')
     individual_bounds = compute_individual_generalization_bounds(beta_values, results, n, loss_type='bce')
     individual_zero_one_bounds = compute_individual_generalization_bounds(beta_values, results, n, loss_type='zero_one')
-    kl_analysis = compute_kl_divergence_analysis(beta_values, results, n)
+    kl_analysis = compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce')
     kl_analysis_zo = compute_kl_divergence_analysis(beta_values, results, n, loss_type='zero_one')
     
     # Extract data for plotting

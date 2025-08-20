@@ -11,13 +11,14 @@ import torch.optim as optim
 import time
 import json
 import os
+import csv
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
 from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
 from sgld import SGLD
 from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
                     get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels)
-
+from torch.nn import BCEWithLogitsLoss
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
     """
@@ -37,10 +38,123 @@ def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
     return numerator / denominator
 
 
+def save_output_label_products_to_csv(train_data, test_data, filename_prefix, beta_values):
+    """
+    Save output * batch_y values to CSV files for training and test data.
+    
+    Args:
+        train_data: Dictionary with structure {beta: {rep: [output*batch_y values]}}
+        test_data: Dictionary with structure {beta: {rep: [output*batch_y values]}}
+        filename_prefix: Prefix for the CSV files (e.g., 'experiment_2024')
+        beta_values: List of beta values for column ordering
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create CSV directory if it doesn't exist
+    os.makedirs('csv_outputs', exist_ok=True)
+    
+    # Save training data
+    train_filename = f"csv_outputs/{filename_prefix}_train_output_label_products_{timestamp}.csv"
+    save_data_to_csv(train_data, train_filename, beta_values, 'Training')
+    
+    # Save test data
+    test_filename = f"csv_outputs/{filename_prefix}_test_output_label_products_{timestamp}.csv"
+    save_data_to_csv(test_data, test_filename, beta_values, 'Test')
+    
+    print(f"📊 CSV files saved:")
+    print(f"   Training data: {train_filename}")
+    print(f"   Test data: {test_filename}")
+    
+    return train_filename, test_filename
+
+
+def save_data_to_csv(data, filename, beta_values, data_type):
+    """
+    Save output*label product data to a CSV file.
+    
+    Args:
+        data: Dictionary with structure {beta: {rep: [output*batch_y values]}}
+        filename: Path to save the CSV file
+        beta_values: List of beta values for column ordering
+        data_type: 'Training' or 'Test' for logging purposes
+    """
+    # Determine the maximum number of repetitions and samples per repetition
+    max_reps = 0
+    max_samples = 0
+    
+    for beta in beta_values:
+        if beta in data:
+            max_reps = max(max_reps, len(data[beta]))
+            for rep_idx, rep_data in data[beta].items():
+                max_samples = max(max_samples, len(rep_data))
+    
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        
+        # Write header with metadata
+        writer.writerow([f"{data_type} Data: Output * Label Products"])
+        writer.writerow([f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"])
+        writer.writerow([f"Beta values: {beta_values}"])
+        writer.writerow([f"Max repetitions: {max_reps}"])
+        writer.writerow([f"Max samples per repetition: {max_samples}"])
+        writer.writerow([])  # Empty row for separation
+        
+        # Write column headers
+        headers = ['Beta', 'Repetition', 'Sample_Count']
+        for i in range(max_samples):
+            headers.append(f'Output_Label_Product_{i+1}')
+        writer.writerow(headers)
+        
+        # Write data rows
+        for beta in sorted(beta_values):
+            if beta in data:
+                for rep_idx, rep_data in data[beta].items():
+                    row = [beta, rep_idx + 1, len(rep_data)]
+                    # Add the output*label products
+                    for val in rep_data:
+                        row.append(val)
+                    # Pad with empty values if this repetition has fewer samples
+                    while len(row) < len(headers):
+                        row.append('')
+                    writer.writerow(row)
+    
+    print(f"   {data_type} CSV saved: {filename} ({max_reps} reps × {max_samples} samples per rep)")
+
+
+def collect_output_label_products(outputs, batch_y, dataset_type='synth'):
+    """
+    Compute output * batch_y products for the current batch.
+    
+    Args:
+        outputs: Model outputs (logits)
+        batch_y: True labels
+        dataset_type: 'synth' or 'mnist' for proper handling
+        
+    Returns:
+        List of output * label products for this batch
+    """
+    # Change the labels from {0,1} to {1,-1}
+    batch_y = 2 * batch_y - 1
+    # Handle different output shapes for SYNTH vs MNIST
+    if dataset_type == 'synth':
+        # For synth, outputs are typically (batch_size, 1) or (batch_size,)
+        if outputs.dim() > 1:
+            outputs = outputs.squeeze()
+        products = outputs * batch_y
+    else:
+        # For mnist, similar handling
+        if outputs.dim() > 1:
+            outputs = outputs.squeeze()
+        products = outputs * batch_y
+    
+    # Convert to list of float values
+    return products.detach().cpu().numpy().tolist()
+
+
 def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100, 
                      a0: float = 1e-3, b: float = 0.5, sigma_gauss_prior: float = 0.1, 
                      beta: float = 1.0, device: str = 'cpu', dataset_type: str = 'synth',
-                     l_max: float = 2.0):
+                     l_max: float = 2.0, collect_output_products: bool = False):
     """
     Train the neural network with SGLD and bounded cross entropy loss.
     
@@ -56,10 +170,12 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         device: Device to run training on
         dataset_type: 'synth' or 'mnist' for proper loss computation
         l_max: Maximum loss value for transformation to [0,1] interval
+        collect_output_products: If True, collect output * label products
         
     Returns:
         Tuple containing: (train_losses, test_losses, train_accuracies, test_accuracies, 
                           train_zero_one_losses, test_zero_one_losses, learning_rates)
+        If collect_output_products is True, also returns (train_output_products, test_output_products)
     """
     # Convert device to torch.device if it's a string
     if isinstance(device, str):
@@ -68,8 +184,8 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     model = model.to(device)
     criterion = BoundedCrossEntropyLoss(ell_max=l_max)
     # criterion = TangentLoss()
+    # criterion = BCEWithLogitsLoss()  # Use standard BCE for SGLD optimization
     zero_one_criterion = ZeroOneLoss()
-    
 
     # Check if we're using BCE for optimization (to determine if transformation is needed)
     using_bce_for_optimization = isinstance(criterion, BoundedCrossEntropyLoss)
@@ -89,8 +205,14 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     test_zero_one_losses = []
     learning_rates = []
     
+    # Initialize output product collections if requested
+    train_output_products = [] if collect_output_products else None
+    test_output_products = [] if collect_output_products else None
+    
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
     print(f"Dataset type: {dataset_type}, Device: {device}")
+    if collect_output_products:
+        print(f"Collecting output * label products for CSV export")
     
     # Progress tracking
     start_time = time.time()
@@ -102,6 +224,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         train_zero_one_total = 0.0
         train_correct = 0
         train_total = 0
+        epoch_train_products = [] if collect_output_products else None
         
         for batch_x, batch_y in train_loader:
             # Use non_blocking=True for faster GPU transfer
@@ -114,7 +237,13 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
             # Standard precision training
             outputs = model(batch_x)
             
+            # Collect output * label products if requested
+            if collect_output_products:
+                batch_products = collect_output_label_products(outputs, batch_y, dataset_type)
+                epoch_train_products.extend(batch_products)
+             
             # Handle different output shapes for SYNTH vs MNIST
+
             if dataset_type == 'synth':
                 loss_for_optimization = criterion(outputs, batch_y)
                 if using_bce_for_optimization:
@@ -141,6 +270,10 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
             train_total += batch_y.size(0)
             train_correct += (predicted == batch_y).sum().item()
         
+        # Store epoch training products
+        if collect_output_products:
+            train_output_products.append(epoch_train_products)
+        
         # Step the learning rate scheduler
         current_lr = optimizer.param_groups[0]['lr']
         learning_rates.append(current_lr)
@@ -159,6 +292,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         test_zero_one_total = 0.0
         test_correct = 0
         test_total = 0
+        epoch_test_products = [] if collect_output_products else None
         
         with torch.no_grad():
             for batch_x, batch_y in test_loader:
@@ -166,6 +300,11 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                 batch_y = batch_y.to(device, non_blocking=True)
                 
                 outputs = model(batch_x)
+                
+                # Collect output * label products if requested
+                if collect_output_products:
+                    batch_products = collect_output_label_products(outputs, batch_y, dataset_type)
+                    epoch_test_products.extend(batch_products)
                 
                 if dataset_type == 'synth':
                     loss_for_optimization = criterion(outputs, batch_y)
@@ -188,6 +327,10 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                 test_zero_one_total += zero_one_loss.item()
                 test_total += batch_y.size(0)
                 test_correct += (predicted == batch_y).sum().item()
+        
+        # Store epoch test products
+        if collect_output_products:
+            test_output_products.append(epoch_test_products)
         
         avg_test_loss = test_loss_total / len(test_loader)
         avg_test_zero_one = test_zero_one_total / len(test_loader)
@@ -215,7 +358,13 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
                 print(f'GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.0f}MB allocated, '
                       f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
     
-    return train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates
+    if collect_output_products:
+        return (train_losses, test_losses, train_accuracies, test_accuracies, 
+                train_zero_one_losses, test_zero_one_losses, learning_rates,
+                train_output_products, test_output_products)
+    else:
+        return (train_losses, test_losses, train_accuracies, test_accuracies, 
+                train_zero_one_losses, test_zero_one_losses, learning_rates)
 
 
 def save_checkpoint(results, checkpoint_path, experiment_config, completed_repetitions):
@@ -296,7 +445,7 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                          a0=1e-1, b=0.5, sigma_gauss_prior=1000000, 
                          device='cpu', dataset_type='synth', use_random_labels=False,
                          l_max=2.0, mnist_classes=None, train_loader=None, test_loader=None,
-                         checkpoint_path=None, save_every=1):
+                         checkpoint_path=None, save_every=1, save_output_products_csv=False):
     """
     Run experiments across different beta values with multiple repetitions.
     
@@ -325,6 +474,7 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         test_loader: Pre-created test DataLoader (if None, will create based on other params)
         checkpoint_path: Path to checkpoint file (if None, auto-generated)
         save_every: Save checkpoint every N repetitions (default: 1)
+        save_output_products_csv: If True, save output * label products to CSV files
         
     Returns:
         Dictionary containing results for each beta value (including beta=0 if not present)
@@ -402,6 +552,16 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 'raw_test_01': []
             }
     
+    # Initialize output products storage if requested
+    train_output_products_data = {} if save_output_products_csv else None
+    test_output_products_data = {} if save_output_products_csv else None
+    
+    if save_output_products_csv:
+        for beta in extended_beta_values:
+            train_output_products_data[beta] = {}
+            test_output_products_data[beta] = {}
+        print(f"📊 Output * label products will be saved to CSV files")
+    
     print(f"\nConfiguration:")
     print(f"Epochs per beta:")
     for beta in sorted(extended_beta_values):
@@ -474,7 +634,7 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 model = SynthNN(input_dim=4, hidden_dim=500)
             
             # Train the model
-            train_losses, test_losses, _, _, train_01_losses, test_01_losses, _ = train_sgld_model(
+            training_results = train_sgld_model(
                 model=model,
                 train_loader=current_train_loader,
                 test_loader=current_test_loader,
@@ -485,8 +645,21 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 beta=beta,
                 device=device,
                 dataset_type=dataset_type,
-                l_max=l_max
+                l_max=l_max,
+                collect_output_products=save_output_products_csv
             )
+            
+            # Unpack results based on whether output products were collected
+            if save_output_products_csv:
+                (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, 
+                 train_output_products, test_output_products) = training_results
+                
+                # Store output products for this repetition and beta
+                # We only store the final epoch's data (last element of each list)
+                train_output_products_data[beta][rep] = train_output_products[-1] if train_output_products else []
+                test_output_products_data[beta][rep] = test_output_products[-1] if test_output_products else []
+            else:
+                (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _) = training_results
             
             # Store final values (last epoch)
             results[beta]['raw_train_bce'].append(train_losses[-1])
@@ -586,8 +759,8 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
     # Print results for each beta, starting with beta=0 if present
     sorted_betas = sorted(results.keys())
     for beta in sorted_betas:
-        train_error = results[beta]['train_bce_mean']
-        test_error = results[beta]['test_bce_mean']
+        train_error = final_results[beta]['train_bce_mean']
+        test_error = final_results[beta]['test_bce_mean']
         
         # For this beta, find the minimum train error among all repetitions
         min_train_error_for_beta = min(results[beta]['raw_train_bce'])
@@ -595,13 +768,36 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         print(f"{beta:<8.1f} {train_error:<12.4f} {test_error:<12.4f} {min_train_error_for_beta:<15.4f}")
     
     print(f"{'-'*8} {'-'*12} {'-'*12} {'-'*15}")
-    print(f"Notes:")
-    print(f"  - Train/Test Error: Bounded Cross-Entropy (BCE) Loss")
-    print(f"  - Min Train Error: Lowest train error among all repetitions for each β")
-    print(f"  - β=0: Pure SGLD noise")
-    print(f"  - Higher β: More SGLD noise, potentially better generalization")
     
-    return results
+    # Save output products to CSV if requested
+    if save_output_products_csv:
+        print(f"\n{'='*60}")
+        print(f"SAVING OUTPUT * LABEL PRODUCTS TO CSV")
+        print(f"{'='*60}")
+        
+        # Generate filename prefix based on experiment parameters
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        experiment_desc = f"{dataset_type}"
+        if use_random_labels:
+            experiment_desc += "_random"
+        experiment_desc += f"_beta{min(beta_values)}-{max(beta_values)}"
+        experiment_desc += f"_rep{num_repetitions}"
+        
+        filename_prefix = f"experiment_{experiment_desc}_{timestamp}"
+        
+        # Save CSV files
+        train_csv_path, test_csv_path = save_output_label_products_to_csv(
+            train_output_products_data, 
+            test_output_products_data, 
+            filename_prefix, 
+            sorted(extended_beta_values)
+        )
+        
+        print(f"✅ CSV files successfully created:")
+        print(f"   📁 Training data: {train_csv_path}")
+        print(f"   📁 Test data: {test_csv_path}")
+    
+    return final_results
 
 
 def create_beta_epochs_mapping(beta_epochs_pairs):

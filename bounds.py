@@ -6,7 +6,6 @@ actual generalization errors, and saving results from the SGLD experiments.
 """
 
 import numpy as np
-import torch
 import math
 
 
@@ -28,9 +27,13 @@ def kl(p, q, eps=1e-10):
         KL divergence KL(p||q)
     """
     # Add epsilon to prevent log(0) and division by 0
-    p = max(min(p, 1.0 - eps), eps)  # Clamp p to [eps, 1-eps]
     q = max(min(q, 1.0 - eps), eps)  # Clamp q to [eps, 1-eps]
-    
+
+    if p == 0:
+        return ln(1/(1-q))
+    if p == 1:
+        return ln(1/q)
+
     y = p * ln(p / q) + (1 - p) * ln((1 - p) / (1 - q))
     return y
 
@@ -47,10 +50,8 @@ def invert_kl(p, kl_val, eps=1e-10):
     Returns:
         q such that KL(p||q) = kl_val
     """
-    # Clamp p to prevent numerical issues
-    p = max(min(p, 1.0 - eps), eps)
     
-    l, u, r = p, 1 - eps, 0.5
+    l, u, r = p, 1, 1
     while ((u - l) > 1 / 100000):
         if kl(p, r, eps) < kl_val:
             l = r
@@ -119,12 +120,16 @@ def _compute_single_bound(emp_loss, current_beta, results, integration_betas, tr
     # Compute the main generalization bound
     # Inner term: integral - β * L̂(h,x) + ln(2√n/δ)
     inner_term = integral_upper_bound - current_beta * emp_loss + np.log(2 * np.sqrt(n) / delta)
+    gamma_term = integral_upper_bound - current_beta * emp_loss 
     
     # Linear term
     linear_term = (2 * inner_term) / n
 
-    # Ensure inner_term is positive for square root
-    inner_term = max(inner_term, 1e-10)
+    if inner_term < 0:
+        # raise ValueError(f"Inner term is negative: {inner_term} for beta={current_beta}, emp_loss={emp_loss}. "
+        #                     "This indicates a potential issue with the integral computation or the empirical loss value.")
+        print(f"  ✗ WARNING: Inner term is negative: {inner_term} for beta={current_beta}, emp_loss={emp_loss}. "
+                "This indicates a potential issue with the integral computation or the empirical loss value.")
     
     # Square root term
     sqrt_term = np.sqrt((2 * emp_loss * inner_term) / n)
@@ -138,7 +143,8 @@ def _compute_single_bound(emp_loss, current_beta, results, integration_betas, tr
         'generalization_bound': generalization_bound,
         'sqrt_term': sqrt_term,
         'linear_term': linear_term,
-        'inner_term': inner_term
+        'inner_term': inner_term,
+        'gamma_term': gamma_term
     }
 
 
@@ -205,11 +211,6 @@ def compute_generalization_bound(beta_values, results, n, loss_type='bce', delta
             delta_prime=delta_prime,
             M=M
         )
-        
-        # Check for NaN in final bound
-        if np.isnan(bound_components['generalization_bound']):
-            print(f"WARNING: NaN generalization_bound for beta={current_beta}, loss_type={loss_type}")
-            bound_components['generalization_bound'] = 1.0  # Use fallback value
         
         bounds[current_beta] = {
             'average_emp_loss': average_emp_loss,
@@ -294,21 +295,25 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
     
     print(f"Using training set size n = {n} for bound computations")
     
-    # Compute generalization bounds and errors
-    # Use only the specified beta_values for bounds computation - the bounds function
-    # will handle the need for beta=0 internally for proper integral computation
-    bounds = compute_generalization_bound(beta_values or sorted(results.keys()), results, n, loss_type='bce')
-    zero_one_bounds = compute_generalization_bound(beta_values or sorted(results.keys()), results, n, loss_type='zero_one')
-    individual_bounds = compute_individual_generalization_bounds(beta_values or sorted(results.keys()), results, n, loss_type='bce')
-    individual_zero_one_bounds = compute_individual_generalization_bounds(beta_values or sorted(results.keys()), results, n, loss_type='zero_one')
-    kl_analysis = compute_kl_divergence_analysis(beta_values or sorted(results.keys()), results, n)
-    gen_errors = compute_generalization_errors(beta_values or sorted(results.keys()), results)
-    
-    # Use specified beta_values for file content (excluding beta=0 if not originally requested)
+    # Determine which betas to compute bounds for and which to display
     if beta_values is None:
+        # Use all available betas for bounds computation
+        bounds_beta_values = sorted(results.keys())
         display_beta_values = sorted([b for b in results.keys() if b != 0.0 and b != 0])
     else:
+        # For bounds computation, include beta=0 if it exists in results (needed for integral)
+        bounds_beta_values = sorted(beta_values)
+        if (0.0 in results or 0 in results) and 0.0 not in bounds_beta_values and 0 not in bounds_beta_values:
+            bounds_beta_values = [0.0] + bounds_beta_values
         display_beta_values = sorted(beta_values)
+    
+    # Compute generalization bounds and errors for all betas that will be accessed
+    bounds = compute_generalization_bound(bounds_beta_values, results, n, loss_type='bce')
+    zero_one_bounds = compute_generalization_bound(bounds_beta_values, results, n, loss_type='zero_one')
+    individual_bounds = compute_individual_generalization_bounds(bounds_beta_values, results, n, loss_type='bce')
+    individual_zero_one_bounds = compute_individual_generalization_bounds(bounds_beta_values, results, n, loss_type='zero_one')
+    kl_analysis = compute_kl_divergence_analysis(bounds_beta_values, results, n)
+    gen_errors = compute_generalization_errors(bounds_beta_values, results)
     
     with open(filename, 'w') as f:
         f.write("SGLD Beta Experiments Results\n")
@@ -341,11 +346,11 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
         
         # Results summary table (same format as console output)
         f.write("RESULTS SUMMARY TABLE\n")
-        f.write("="*80 + "\n")
-        f.write(f"{'Beta':<8} {'Train Error':<12} {'Test Error':<12} {'Min Train Error':<15}\n")
-        f.write(f"{'(β)':<8} {'(Mean)':<12} {'(Mean)':<12} {'(Min per β)':<15}\n")
-        f.write(f"{'-'*8} {'-'*12} {'-'*12} {'-'*15}\n")
-        
+        f.write("="*120 + "\n")
+        f.write(f"{'Beta':<8} {'Train BCE':<12} {'Test BCE':<12} {'Train 0-1':<12} {'Test 0-1':<12} {'Min Train BCE':<15} {'Gamma Term':<12}\n")
+        f.write(f"{'(β)':<8} {'(Mean)':<12} {'(Mean)':<12} {'(Mean)':<12} {'(Mean)':<12} {'(Min per β)':<15} {'(Mean)':<12}\n")
+        f.write(f"{'-'*8} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*15} {'-'*12}\n")
+
         # Print results for each beta, including beta=0 if present, then display_beta_values
         # Create a combined list that includes beta=0 if it exists, followed by display_beta_values
         summary_betas = []
@@ -360,21 +365,20 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
                 summary_betas.append(beta)
         
         for beta in summary_betas:
-            train_error = results[beta]['train_bce_mean']
-            test_error = results[beta]['test_bce_mean']
+            train_error_bce = results[beta]['train_bce_mean']
+            test_error_bce = results[beta]['test_bce_mean']
+            train_error_01 = results[beta]['train_01_mean']
+            test_error_01 = results[beta]['test_01_mean']
             
             # For this beta, find the minimum train error among all repetitions
             min_train_error_for_beta = min(results[beta]['raw_train_bce'])
-            
-            f.write(f"{beta:<8.1f} {train_error:<12.4f} {test_error:<12.4f} {min_train_error_for_beta:<15.4f}\n")
-        
-        f.write(f"{'-'*8} {'-'*12} {'-'*12} {'-'*15}\n")
-        f.write("Notes:\n")
-        f.write("  - Train/Test Error: Bounded Cross-Entropy (BCE) Loss\n")
-        f.write("  - Min Train Error: Lowest train error among all repetitions for each β\n")
-        f.write("  - β=0: Pure Gradient Descent (no SGLD noise)\n")
-        f.write("  - Higher β: More SGLD noise, potentially better generalization\n")
-        f.write("\n" + "="*80 + "\n\n")
+
+            gamma_term = bounds[beta]['gamma_term']
+
+            f.write(f"{beta:<8.1f} {train_error_bce:<12.4f} {test_error_bce:<12.4f} {train_error_01:<12.4f} {test_error_01:<12.4f} {min_train_error_for_beta:<15.4f} {gamma_term:<12.4f}\n")
+
+        f.write(f"{'-'*8} {'-'*12} {'-'*12} {'-'*12} {'-'*12} {'-'*15} {'-'*12}\n")
+        f.write("\n" + "="*120 + "\n\n")
         
         # Detailed summary table
         f.write("DETAILED SUMMARY TABLE:\n")
@@ -401,7 +405,7 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
             f.write(f"  Theoretical Generalization Bound:\n")
             f.write(f"    Upper Bound: {bounds[beta]['generalization_bound']:.4f}\n")
             f.write(f"    Bound Tightness: {bounds[beta]['generalization_bound'] - gen_errors[beta]['bce_gen_error']:.4f}\n")
-            f.write(f"    Sqrt Term: {bounds[beta]['sqrt_term']:.4f}, Linear Term: {bounds[beta]['linear_term']:.4f}\n")
+            f.write(f"    Sqrt Term: {bounds[beta]['sqrt_term']:.4f}, Linear Term: {bounds[beta]['linear_term']:.4f}, Gamma Term: {bounds[beta]['gamma_term']:.4f}\n")
             f.write(f"  Individual Bounds (per repetition):\n")
             f.write(f"    Bound Mean: {individual_bounds[beta]['bound_mean']:.4f}\n")
             f.write(f"    Bound Std: {individual_bounds[beta]['bound_std']:.4f}\n")
@@ -414,7 +418,7 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
             f.write(f"  Zero-One Theoretical Generalization Bound:\n")
             f.write(f"    Upper Bound: {zero_one_bounds[beta]['generalization_bound']:.4f}\n")
             f.write(f"    Bound Tightness: {zero_one_bounds[beta]['generalization_bound'] - gen_errors[beta]['zero_one_gen_error']:.4f}\n")
-            f.write(f"    Sqrt Term: {zero_one_bounds[beta]['sqrt_term']:.4f}, Linear Term: {zero_one_bounds[beta]['linear_term']:.4f}\n")
+            f.write(f"    Sqrt Term: {zero_one_bounds[beta]['sqrt_term']:.4f}, Linear Term: {zero_one_bounds[beta]['linear_term']:.4f}, Gamma Term: {zero_one_bounds[beta]['gamma_term']:.4f}\n")
             f.write(f"  Individual Zero-One Bounds (per repetition):\n")
             f.write(f"    Bound Mean: {individual_zero_one_bounds[beta]['bound_mean']:.4f}\n")
             f.write(f"    Bound Std: {individual_zero_one_bounds[beta]['bound_std']:.4f}\n")
@@ -634,11 +638,6 @@ def compute_individual_generalization_bounds(beta_values, results, n, loss_type=
                 M=M
             )
             
-            # Check for NaN in final bound
-            if np.isnan(bound_result['generalization_bound']):
-                print(f"WARNING: NaN generalization_bound for beta={current_beta}, loss_type={loss_type}, emp_loss={emp_loss}")
-                bound_result['generalization_bound'] = 1.0  # Use fallback value
-            
             individual_bound_values.append(bound_result['generalization_bound'])
         
         # Compute statistics over all individual bounds
@@ -723,16 +722,13 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
                     kl_div = kl(train_error_01, test_error_01, eps)
                 # Check if the result is valid (not NaN or infinite)
                 if np.isnan(kl_div) or np.isinf(kl_div):
-                    print(f"WARNING: Invalid KL divergence for beta={current_beta}, train_bce={train_error_bce}, test_bce={test_error_bce}, train_01={train_error_01}, test_01={test_error_01}")
-                    individual_kl_values.append(0.0)
+                    raise ValueError(f"Invalid KL divergence for beta={current_beta}, train_bce={train_error_bce}, test_bce={test_error_bce}, train_01={train_error_01}, test_01={test_error_01}")
                 else:
                     individual_kl_values.append(kl_div)
             except Exception as e:
                 # Handle edge cases with more detailed error information
-                print(f"WARNING: KL computation failed for beta={current_beta}, train_bce={train_error_bce}, test_bce={test_error_bce}, train_01={train_error_01}, test_01={test_error_01}: {e}")
-                individual_kl_values.append(0.0)
-                continue
-            
+                raise ValueError(f"KL divergence computation failed for beta={current_beta}, train_bce={train_error_bce}, test_bce={test_error_bce}, train_01={train_error_01}, test_01={test_error_01}: {e}")
+
             # Use the same unified bound computation approach as individual bounds
             bound_result = _compute_single_bound(
                 emp_loss=train_error_bce,
@@ -762,13 +758,13 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
                     # Check if the result is valid
                     if np.isnan(test_bound) or np.isinf(test_bound):
                         print(f"WARNING: Invalid test bound from invert_kl for beta={current_beta}, train_bce={train_error_bce}, train_01={train_error_01}, kl_bound={kl_bound}: {e}")
-                        test_bound = max(train_error_bce, train_error_01, 1.0)  # Use reasonable fallback
+                        test_bound = train_error_01 if loss_type == 'bce' else train_error_01  # Fallback to train error
                 else:
-                    test_bound = train_error_bce  # If no bound, use train error
+                    test_bound = train_error_01 if loss_type == 'bce' else train_error_01  # Fallback to train error
                 individual_test_bounds.append(test_bound)
             except Exception as e:
                 print(f"WARNING: invert_kl failed for beta={current_beta}, train_bce={train_error_bce}, train_01={train_error_01}, kl_bound={kl_bound}: {e}")
-                individual_test_bounds.append(max(train_error_bce, train_error_01, 1.0))  # Fallback bound
+                individual_test_bounds.append(test_bound := train_error_01 if loss_type == 'bce' else train_error_01)  # Fallback bound
 
         # Compute statistics over all repetitions
         individual_kl_values = np.array(individual_kl_values)
@@ -791,3 +787,6 @@ def compute_kl_divergence_analysis(beta_values, results, n, loss_type='bce'):
         }
     
     return kl_analysis
+
+
+

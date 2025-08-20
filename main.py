@@ -86,8 +86,8 @@ def main():
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
             beta_values = [4000]  # Minimal set for testing
-            num_repetitions = 5  # Very fast testing
-            num_epochs = {0: 1,4000: 5000, }  # Much fewer epochs
+            num_repetitions = 1  # Very fast testing
+            num_epochs = {0: 1,4000: 500, }  # Much fewer epochs
             a0 = {0: 1e-7, 4000: 1e-1}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
@@ -98,10 +98,10 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [250,500,1000, 1500, 2000, 4000, 8000,16000]  # Full MNIST experiment
-            num_repetitions = 10  # Full experiment
-            num_epochs = {0: 1, 250: 500, 500: 500, 1000: 1000, 1500: 1500, 2000: 2000, 4000: 4000, 8000: 8000, 16000: 10000}   
-            a0 = {0: 1e-10, 250: 0.001, 500: 0.005, 1000: 0.01, 1500: 0.02, 2000: 0.05, 4000: 0.1, 8000: 0.1, 16000: 0.2}
+            beta_values = [250,500] #,1000, 1500, 2000, 4000,8000,16000]  # Full MNIST experiment
+            num_repetitions = 1  # Full experiment
+            num_epochs = {0: 1, 250: 500, 500: 500, 1000: 1000, 1500: 1500, 2000: 2000, 4000: 4000,}# 8000: 8000, 16000: 10000}   
+            a0 = {0: 1e-10, 250: 0.001, 500: 0.005, 1000: 0.01, 1500: 0.02, 2000: 0.05, 4000: 0.1, }#8000: 0.1, 16000: 0.2}
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
@@ -149,7 +149,7 @@ def main():
             train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
-                n_test_per_group=5000,
+                n_test_per_group=1000,
                 batch_size=128,
                 random_seed=42000,  # Fixed seed for consistent dataset
                 normalize=True
@@ -158,7 +158,7 @@ def main():
             train_loader, test_loader = get_mnist_binary_dataloaders(
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
-                n_test_per_group=5000,
+                n_test_per_group=1000,
                 batch_size=128,
                 random_seed=42000,  # Fixed seed for consistent dataset
                 normalize=True
@@ -192,50 +192,14 @@ def main():
         l_max=4.0,
         mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None,
         train_loader=train_loader,  # Pass the pre-created dataloaders
-        test_loader=test_loader
+        test_loader=test_loader,
+        save_output_products_csv=True  # Enable CSV output
     )
-    
-    # Print final summary
-    print(f"\n{'='*90}")
-    print("FINAL RESULTS SUMMARY")
-    print(f"{'='*90}")
-    print("Beta\tTrain_BCE\tTest_BCE\tBCE_GenErr\tBCE_Bound\tBound_Gap\tTrain_01\tTest_01\tZO_GenErr\tZO_Bound\tZO_Gap")
-    print("-" * 110)
     
     # Get training set size for bounds computation
     n_train = len(train_loader.dataset)
     
-    # Compute bounds and generalization errors for summary
-    # The bounds functions will handle the need for beta=0 internally
-    bounds = compute_generalization_bound(beta_values, results, n_train, loss_type='bce')
-    zero_one_bounds = compute_generalization_bound(beta_values, results, n_train, loss_type='zero_one')
-    gen_errors = compute_generalization_errors(beta_values, results)
-    
-    # Display results only for the originally requested beta values
-    for beta in sorted(beta_values):
-        train_bce = results[beta]['train_bce_mean']
-        test_bce = results[beta]['test_bce_mean']
-        bce_gen_error = gen_errors[beta]['bce_gen_error']
-        theo_bound = bounds[beta]['generalization_bound']
-        
-        # Bound gap: how much larger the theoretical bound is compared to actual generalization error
-        # Positive means bound is valid, negative means bound is violated
-        bound_gap = theo_bound - bce_gen_error
-        
-        train_01 = results[beta]['train_01_mean']
-        test_01 = results[beta]['test_01_mean']
-        zo_gen_error = gen_errors[beta]['zero_one_gen_error']
-        zo_theo_bound = zero_one_bounds[beta]['generalization_bound']
-        zo_bound_gap = zo_theo_bound - zo_gen_error
-        
-        print(f"{beta}\t{train_bce:.4f}\t\t{test_bce:.4f}\t\t{bce_gen_error:.4f}\t\t{theo_bound:.4f}\t\t{bound_gap:.4f}\t\t{train_01:.4f}\t\t{test_01:.4f}\t\t{zo_gen_error:.4f}\t\t{zo_theo_bound:.4f}\t\t{zo_bound_gap:.4f}")
-    
-    print(f"\nGeneralization Error = Test Loss - Train Loss")
-    print(f"Bound Gap = Theoretical Bound - Actual Generalization Error")
-    print(f"  > 0: Bound is valid (theoretical bound > actual generalization error)")
-    print(f"  ≈ 0: Bound is tight")
-    print(f"  < 0: Bound is violated (should not happen with high probability)")
-    
+
     # Create comprehensive hyperparameter dictionary
     from results_manager import create_hyperparameter_dict, save_or_merge_results
     
