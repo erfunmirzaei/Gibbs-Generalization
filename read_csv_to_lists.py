@@ -51,7 +51,8 @@ def read_csv_to_lists(csv_file_path, data_type="unknown"):
                 for col_idx in product_columns:
                     if col_idx < len(row) and row[col_idx] != '':
                         products.append(float(row[col_idx]))
-                data[beta] = {}
+                if beta not in data:
+                    data[beta] = {}
                 # Store directly as list for each beta (assuming single repetition)
                 data[beta][repetition] = products
                 row_count += 1
@@ -72,9 +73,9 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    test_csv_filename = "experiment_mnist_beta250-4000_rep1_20250820_125049_test_output_label_products_20250820_125049.csv"
-    train_csv_filename = "experiment_mnist_beta250-4000_rep1_20250820_125049_train_output_label_products_20250820_125049.csv"
-    
+    test_csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"
+    train_csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_train_output_label_products_20250821_054118.csv"
+
     # Random label
     # test_csv_filename = "experiment_mnist_random_beta250-4000_rep1_20250820_131024_test_output_label_products_20250820_131024.csv"
     # train_csv_filename = "experiment_mnist_random_beta250-4000_rep1_20250820_131024_train_output_label_products_20250820_131024.csv"
@@ -117,7 +118,7 @@ def main():
             train_BCE[repetition][beta] = BCE_criterion(torch.tensor(output).unsqueeze(-1), torch.ones_like(torch.tensor(output)))
             train_BCE[repetition][beta] = transform_bce_to_unit_interval(train_BCE[repetition][beta], l_max=4)
             # train_BCE2[beta] = sum(bce(val) for val in output) / len(output)
-            ramp_losses[repetition][beta] = sum(f(val, 0) for val in output) / len(output)
+            ramp_losses[repetition][beta] = sum(f(val, 5) for val in output) / len(output)
             zo_test_errors[repetition][beta] = ZO_criterion(torch.tensor(test_data[repetition][beta]).unsqueeze(-1), torch.ones_like(torch.tensor(test_data[repetition][beta]).unsqueeze(-1)))
 
     # Take average over repetitions of train_BCE
@@ -186,3 +187,4 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid()
     plt.show()
+    plt.savefig("test_bound_and_zo_test_error.png")
