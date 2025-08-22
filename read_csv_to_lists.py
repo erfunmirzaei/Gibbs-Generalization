@@ -71,7 +71,7 @@ def read_csv_to_lists(csv_file_path, data_type="unknown"):
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-        # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
+    # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
     test_csv_filename = "experiment_mnist_beta250-16000_rep10_20250822_000406_test_output_label_products_20250822_000406.csv"
     train_csv_filename = "experiment_mnist_beta250-16000_rep10_20250822_000406_train_output_label_products_20250822_000406.csv"
@@ -118,6 +118,7 @@ def main():
             train_BCE[repetition][beta] = BCE_criterion(torch.tensor(output).unsqueeze(-1), torch.ones_like(torch.tensor(output)))
             train_BCE[repetition][beta] = transform_bce_to_unit_interval(train_BCE[repetition][beta], l_max=4)
             # train_BCE2[beta] = sum(bce(val) for val in output) / len(output)
+            ramp_losses[repetition][beta] = sum(f(val, 3) for val in output) / len(output)
             # TODO: THE Second argument of f is the gamma in the ramp loss function
             ramp_losses[repetition][beta] = sum(f(val, 5) for val in output) / len(output)
             zo_test_errors[repetition][beta] = ZO_criterion(torch.tensor(test_data[repetition][beta]).unsqueeze(-1), torch.ones_like(torch.tensor(test_data[repetition][beta]).unsqueeze(-1)))
