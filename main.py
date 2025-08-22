@@ -25,7 +25,7 @@ from plot_utils import plot_beta_results
 TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = True
+USE_RANDOM_LABELS = False
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'

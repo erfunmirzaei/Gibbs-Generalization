@@ -73,12 +73,12 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    test_csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"
-    train_csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_train_output_label_products_20250821_054118.csv"
+    test_csv_filename = "experiment_mnist_beta250-16000_rep10_20250822_000406_test_output_label_products_20250822_000406.csv"
+    train_csv_filename = "experiment_mnist_beta250-16000_rep10_20250822_000406_train_output_label_products_20250822_000406.csv"
 
     # Random label
-    # test_csv_filename = "experiment_mnist_random_beta250-4000_rep1_20250820_131024_test_output_label_products_20250820_131024.csv"
-    # train_csv_filename = "experiment_mnist_random_beta250-4000_rep1_20250820_131024_train_output_label_products_20250820_131024.csv"
+    # test_csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"
+    # train_csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_train_output_label_products_20250821_054118.csv"
 
     # TODO: HERE I AM ASSUMED THAT CSV FILES ARE SAVED IN A SUBDIRECTORY NAMED 'csv_outputs' BUT IF IT IS NOT THE CASE THAT EXTRA ARGUMENT COULD EASILY BE OMITTED
     train_csv_path = os.path.join(script_dir, "csv_outputs", train_csv_filename)
@@ -118,7 +118,7 @@ def main():
             train_BCE[repetition][beta] = BCE_criterion(torch.tensor(output).unsqueeze(-1), torch.ones_like(torch.tensor(output)))
             train_BCE[repetition][beta] = transform_bce_to_unit_interval(train_BCE[repetition][beta], l_max=4)
             # train_BCE2[beta] = sum(bce(val) for val in output) / len(output)
-            ramp_losses[repetition][beta] = sum(f(val, 5) for val in output) / len(output)
+            ramp_losses[repetition][beta] = sum(f(val, 3) for val in output) / len(output)
             zo_test_errors[repetition][beta] = ZO_criterion(torch.tensor(test_data[repetition][beta]).unsqueeze(-1), torch.ones_like(torch.tensor(test_data[repetition][beta]).unsqueeze(-1)))
 
     # Take average over repetitions of train_BCE
