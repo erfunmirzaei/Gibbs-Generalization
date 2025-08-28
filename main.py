@@ -73,8 +73,8 @@ def gpu_diagnostic():
 def main():
     """Main experiment function."""
     # GPU diagnostic and setup
-    device = gpu_diagnostic()
-    
+    # device = gpu_diagnostic()
+    device = 'cpu'  # Force CPU for compatibility in this environment
     # Define beta values to test
     if TEST_MODE:
         print("\n" + "="*50)
@@ -100,8 +100,8 @@ def main():
         if DATASET_TYPE == 'mnist':
             beta_values = [1, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
             num_repetitions = 1  # Full experiment
-            num_epochs = {0: 1, 1:3000, 250: 3000, 500: 3000, 1000: 3000, 2000: 3000, 4000: 3000, 8000: 3000, 16000: 3000}
-            a0 = {0: 1e-10, 1: 0.1, 250: 0.1, 500: 0.1, 1000: 0.1, 2000: 0.1, 4000: 0.1, 8000: 0.1, 16000: 0.1}
+            num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 10000, 4000: 10000, 8000: 10000, 16000: 10000}
+            a0 = {0: 1e-10, 1: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
