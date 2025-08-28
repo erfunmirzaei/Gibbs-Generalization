@@ -25,7 +25,7 @@ from plot_utils import plot_beta_results
 TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = False
+USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
@@ -85,10 +85,10 @@ def main():
         
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [4000]  # Minimal set for testing
+            beta_values = [16000]  # Minimal set for testing
             num_repetitions = 1  # Very fast testing
-            num_epochs = {0: 1,4000: 500, }  # Much fewer epochs
-            a0 = {0: 1e-7, 4000: 1e-1}
+            num_epochs = {0: 1, 16000: 10000, }  # Much fewer epochs
+            a0 = {0: 1e-7, 16000: 0.2}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
@@ -98,10 +98,10 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [250,500,1000, 1500, 2000, 4000,8000,16000]  # Full MNIST experiment
-            num_repetitions = 10  # Full experiment
-            num_epochs = {0: 1, 250: 500, 500: 500, 1000: 1000, 1500: 1500, 2000: 2000, 4000: 4000, 8000: 8000, 16000: 10000}   
-            a0 = {0: 1e-10, 250: 0.001, 500: 0.005, 1000: 0.01, 1500: 0.02, 2000: 0.05, 4000: 0.1, 8000: 0.1, 16000: 0.2}
+            beta_values = [1, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
+            num_repetitions = 1  # Full experiment
+            num_epochs = {0: 1, 1:3000, 250: 3000, 500: 3000, 1000: 3000, 2000: 3000, 4000: 3000, 8000: 3000, 16000: 3000}
+            a0 = {0: 1e-10, 1: 0.1, 250: 0.1, 500: 0.1, 1000: 0.1, 2000: 0.1, 4000: 0.1, 8000: 0.1, 16000: 0.1}
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
@@ -150,7 +150,7 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=1000,
-                batch_size=128,
+                batch_size=2000,
                 random_seed=42000,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -159,7 +159,7 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=1000,
-                batch_size=128,
+                batch_size=2000,
                 random_seed=42000,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -184,7 +184,7 @@ def main():
         num_repetitions=num_repetitions,
         num_epochs=num_epochs,
         a0=a0,  # Now supports dict, callable, or float
-        b=0.5,
+        b=0.55,
         sigma_gauss_prior=1000,
         device=device,
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
@@ -208,7 +208,7 @@ def main():
         num_repetitions=num_repetitions,
         num_epochs=num_epochs,
         a0=a0,
-        b=0.5,
+        b=0.55,
         sigma_gauss_prior=1000,
         device=device,
         dataset_type=DATASET_TYPE,
@@ -249,6 +249,8 @@ def main():
         'a0': a0,
         'sigma_gauss_prior': 1000,
         'dataset_type': DATASET_TYPE,
+        'use_random_labels': USE_RANDOM_LABELS,
+        'hyperparams': hyperparams
     }
     
     plot_beta_results(plot_results, n_train, **experiment_params)
@@ -259,8 +261,14 @@ def main():
     
     # Get the generated filenames for display
     from bounds import generate_filename
-    legacy_results_filename = generate_filename(file_type='results', extension='txt', **experiment_params)
-    plot_filename = generate_filename(file_type='plot', extension='png', **experiment_params)
+    legacy_results_filename = generate_filename(
+        file_type='results', extension='txt', 
+        **experiment_params
+    )
+    plot_filename = generate_filename(
+        file_type='plot', extension='png', 
+        **experiment_params
+    )
     
     print(f"\n{'='*70}")
     print("EXPERIMENT COMPLETED!")

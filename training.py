@@ -194,8 +194,19 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
                      beta=beta, add_noise=True)
     
-    # Learning rate scheduler: lr_t = a0 * t^(-b)
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda epoch: (epoch + 1) ** (-b))
+    # Learning rate scheduler with threshold: lr_t = max(a0 * t^(-b), 0.01)
+    # This stops the decay when learning rate reaches 0.01
+    lr_threshold = 0.005
+    def lr_lambda_with_threshold(epoch):
+        power_law_lr = (epoch + 1) ** (-b)
+        # Convert to actual learning rate value and check threshold
+        actual_lr = a0 * power_law_lr
+        if actual_lr <= lr_threshold:
+            return lr_threshold / a0  # Return the ratio that gives us the threshold
+        else:
+            return power_law_lr  # Return the normal power law ratio
+    
+    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
     
     train_losses = []
     test_losses = []
@@ -210,6 +221,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     test_output_products = [] if collect_output_products else None
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
+    print(f"Learning rate scheduler: power law decay with threshold at {lr_threshold}")
     print(f"Dataset type: {dataset_type}, Device: {device}")
     if collect_output_products:
         print(f"Collecting output * label products for CSV export")
@@ -277,7 +289,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         # Step the learning rate scheduler
         current_lr = optimizer.param_groups[0]['lr']
         learning_rates.append(current_lr)
-        scheduler.step()
+        # scheduler.step()
         
         avg_train_loss = train_loss_total / len(train_loader)
         avg_train_zero_one = train_zero_one_total / len(train_loader)
@@ -700,6 +712,37 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 }
             
             save_checkpoint(checkpoint_results, checkpoint_path, experiment_config, rep + 1)
+            
+            # Save output * label CSV files at the same time as checkpoint if requested
+            if save_output_products_csv and train_output_products_data is not None:
+                # Generate filename prefix based on experiment parameters
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                experiment_desc = f"{dataset_type}"
+                if use_random_labels:
+                    experiment_desc += "_random"
+                experiment_desc += f"_beta{min(beta_values)}-{max(beta_values)}"
+                experiment_desc += f"_rep{rep+1}-of-{num_repetitions}"
+                
+                filename_prefix = f"checkpoint_{experiment_desc}_{timestamp}"
+                
+                # Create a copy of data for the current repetitions completed
+                current_train_data = {}
+                current_test_data = {}
+                for beta in extended_beta_values:
+                    current_train_data[beta] = {k: v for k, v in train_output_products_data[beta].items() if k <= rep}
+                    current_test_data[beta] = {k: v for k, v in test_output_products_data[beta].items() if k <= rep}
+                
+                # Save CSV files for current progress
+                train_csv_path, test_csv_path = save_output_label_products_to_csv(
+                    current_train_data, 
+                    current_test_data, 
+                    filename_prefix, 
+                    sorted(extended_beta_values)
+                )
+                
+                print(f"📊 Checkpoint CSV files saved:")
+                print(f"   📁 Training data: {train_csv_path}")
+                print(f"   📁 Test data: {test_csv_path}")
         
         print(f"\n✅ Completed repetition {rep+1}/{num_repetitions}")
         
@@ -769,10 +812,10 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
     
     print(f"{'-'*8} {'-'*12} {'-'*12} {'-'*15}")
     
-    # Save output products to CSV if requested
+    # Save output products to CSV if requested (final version)
     if save_output_products_csv:
         print(f"\n{'='*60}")
-        print(f"SAVING OUTPUT * LABEL PRODUCTS TO CSV")
+        print(f"SAVING FINAL OUTPUT * LABEL PRODUCTS TO CSV")
         print(f"{'='*60}")
         
         # Generate filename prefix based on experiment parameters
@@ -781,7 +824,7 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         if use_random_labels:
             experiment_desc += "_random"
         experiment_desc += f"_beta{min(beta_values)}-{max(beta_values)}"
-        experiment_desc += f"_rep{num_repetitions}"
+        experiment_desc += f"_rep{num_repetitions}_FINAL"
         
         filename_prefix = f"experiment_{experiment_desc}_{timestamp}"
         
@@ -793,7 +836,7 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             sorted(extended_beta_values)
         )
         
-        print(f"✅ CSV files successfully created:")
+        print(f"✅ Final CSV files successfully created:")
         print(f"   📁 Training data: {train_csv_path}")
         print(f"   📁 Test data: {test_csv_path}")
     

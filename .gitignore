@@ -92,3 +92,7 @@ checkpoints/
 *.pth
 *.ckpt
 *.h5
+
+*test*
+*demo*
+*analysis*

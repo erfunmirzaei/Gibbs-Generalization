@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 
 
 def plot_beta_results(results, n, filename=None, beta_values=None, num_repetitions=None, num_epochs=None, 
-                     a0=None, sigma_gauss_prior=None, dataset_type='synth'):
+                     a0=None, sigma_gauss_prior=None, dataset_type='synth', use_random_labels=False, hyperparams=None):
     """
     Plot the generalization errors with confidence intervals, generalization bounds, 
     individual bounds, KL divergence analysis, and test error bounds across different beta values.
@@ -34,6 +34,8 @@ def plot_beta_results(results, n, filename=None, beta_values=None, num_repetitio
         a0: Learning rate (for filename generation)
         sigma_gauss_prior: Prior parameter (for filename generation)
         dataset_type: Dataset type (for filename generation)
+        use_random_labels: Whether random labels were used (for filename generation)
+        hyperparams: Full hyperparameter dictionary for hash generation
     """
     from bounds import (compute_generalization_bound, compute_generalization_errors, 
                        compute_individual_generalization_bounds, compute_kl_divergence_analysis, 
@@ -161,12 +163,15 @@ def plot_beta_results(results, n, filename=None, beta_values=None, num_repetitio
             sigma_gauss_prior=sigma_gauss_prior,
             dataset_type=dataset_type,
             file_type='plot',
-            extension='png'
+            extension='png',
+            use_random_labels=use_random_labels,
+            hyperparams=hyperparams
         )
         filename = f"results/{filename}"
     elif filename is None:
-        # Fallback to default naming
-        filename = 'results/sgld_beta_experiments.png'
+        # Fallback to default naming with random labels info
+        labels_str = "randlabels" if use_random_labels else "reallabels"
+        filename = f'results/sgld_plot_{dataset_type}_{labels_str}_beta_experiments.png'
     
     # Save the figure
     plt.savefig(filename, dpi=300, bbox_inches='tight')

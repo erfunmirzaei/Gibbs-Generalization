@@ -7,6 +7,7 @@ actual generalization errors, and saving results from the SGLD experiments.
 
 import numpy as np
 import math
+import results_manager
 
 
 def ln(x):
@@ -257,7 +258,8 @@ def compute_generalization_errors(beta_values, results):
 
 
 def save_results_to_file(results, n, filename=None, beta_values=None, num_repetitions=None, 
-                        num_epochs=None, a0=None, sigma_gauss_prior=None, dataset_type='synth'):
+                        num_epochs=None, a0=None, sigma_gauss_prior=None, dataset_type='synth',
+                        use_random_labels=False, hyperparams=None, **kwargs):
     """
     Save the experimental results to a text file with descriptive filename.
     
@@ -271,6 +273,9 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
         a0: Learning rate (for filename generation)
         sigma_gauss_prior: Prior parameter (for filename generation)
         dataset_type: Dataset type (for filename generation)
+        use_random_labels: Whether random labels were used (for filename generation)
+        hyperparams: Full hyperparameter dictionary for hash generation
+        **kwargs: Additional parameters (for backward compatibility)
     """
     # Validate that n is provided
     if n is None:
@@ -286,7 +291,9 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
             sigma_gauss_prior=sigma_gauss_prior,
             dataset_type=dataset_type,
             file_type='results',
-            extension='txt'
+            extension='txt',
+            use_random_labels=use_random_labels,
+            hyperparams=hyperparams
         )
         filename = f"results/{filename}"
     elif filename is None:
@@ -480,7 +487,8 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
         f.write("="*80 + "\n\n")
     
 def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_prior, 
-                     dataset_type='synth', file_type='results', extension='txt'):
+                     dataset_type='synth', file_type='results', extension='txt', 
+                     use_random_labels=False, hyperparams=None, **kwargs):
     """
     Generate a descriptive filename based on experimental parameters.
     
@@ -491,11 +499,14 @@ def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_
         a0: Learning rate
         sigma_gauss_prior: Prior parameter
         dataset_type: Type of dataset ('synth', 'mnist', etc.)
-        file_type: Type of file ('results', 'plot', etc.)
+        file_type: Type of file ('results', 'plot', etc.')
         extension: File extension ('txt', 'png', etc.)
+        use_random_labels: Whether random labels were used
+        hyperparams: Full hyperparameter dictionary for hash generation
+        **kwargs: Additional parameters (for backward compatibility)
     
     Returns:
-        str: Descriptive filename
+        str: Descriptive filename with random labels info and hash
     """
     # Format beta range
     beta_min, beta_max = min(beta_values), max(beta_values)
@@ -565,8 +576,26 @@ def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_
     else:
         epochs_str = "ep_unknown"
     
-    # Create filename
-    filename = f"sgld_{file_type}_{dataset_type}_{beta_str}_{lr_str}_{sigma_str}_{epochs_str}_rep{num_repetitions}.{extension}"
+    # Add random labels indicator
+    labels_str = "randlabels" if use_random_labels else "reallabels"
+    
+    # Generate hash from hyperparameters if available
+    hash_str = ""
+    if hyperparams is not None:
+        try:
+            from results_manager import generate_hyperparameter_hash
+            hash_value = generate_hyperparameter_hash(hyperparams)
+            hash_str = f"_hash{hash_value}"
+        except ImportError:
+            # Fallback if results_manager is not available
+            import hashlib
+            import json
+            param_string = json.dumps(hyperparams, sort_keys=True, default=str)
+            hash_value = hashlib.sha256(param_string.encode()).hexdigest()[:8]
+            hash_str = f"_hash{hash_value}"
+    
+    # Create comprehensive filename
+    filename = f"sgld_{file_type}_{dataset_type}_{labels_str}_{beta_str}_{lr_str}_{sigma_str}_{epochs_str}_rep{num_repetitions}{hash_str}.{extension}"
     
     return filename
 
