@@ -57,7 +57,6 @@ def create_hyperparameter_dict(**kwargs):
     return {
         'beta_values': kwargs.get('beta_values', []),
         'num_repetitions': kwargs.get('num_repetitions', 1),
-        'num_epochs': kwargs.get('num_epochs', 1000),
         'a0': kwargs.get('a0', 0.1),
         'b': kwargs.get('b', 0.5),
         'sigma_gauss_prior': kwargs.get('sigma_gauss_prior', 1000),
@@ -70,6 +69,9 @@ def create_hyperparameter_dict(**kwargs):
         'test_dataset_size': kwargs.get('test_dataset_size', None),
         'batch_size': kwargs.get('batch_size', 128),
         'random_seed': kwargs.get('random_seed', 42),
+        'alpha': kwargs.get('alpha', 0.1),
+        'eta': kwargs.get('eta', 0.1),
+        'eps': kwargs.get('eps', 1e-3),
         'normalize': kwargs.get('normalize', True)
     }
 

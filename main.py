@@ -15,14 +15,12 @@ import time
 from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels, get_synth_dataloaders_random_labels,
                     create_mnist_binary_dataset, get_mnist_binary_dataloaders,
                     create_mnist_binary_dataset_random_labels, get_mnist_binary_dataloaders_random_labels)
-from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
-from losses import BoundedCrossEntropyLoss, ZeroOneLoss
 from training import run_beta_experiments
 from bounds import compute_generalization_bound, compute_generalization_errors, save_results_to_file
 from plot_utils import plot_beta_results
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  False
+TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = True
@@ -82,13 +80,12 @@ def main():
         print("For full experiment, set TEST_MODE = False")
         print("="*50)
 
-        
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [16000]  # Minimal set for testing
+            beta_values = [1]  # Minimal set for testing
             num_repetitions = 1  # Very fast testing
-            num_epochs = {0: 1, 16000: 10000, }  # Much fewer epochs
-            a0 = {0: 1e-7, 16000: 0.2}
+            # num_epochs = {0: 1, 1: 3000}  # Much fewer epochs
+            a0 = {0: 1e-10, 1: 0.01}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
@@ -98,10 +95,12 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [1, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
+            beta_values = [250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
             num_repetitions = 1  # Full experiment
-            num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 40000, 4000: 40000, 8000: 40000, 16000: 40000}
-            a0 = {0: 1e-10, 1: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
+            # num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 40000, 4000: 40000, 8000: 40000, 16000: 40000}
+            # a0 = {0: 1e-10, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
+            a0 = {0: 1e-10, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
             num_repetitions = 30  # Full experiment
@@ -113,19 +112,19 @@ def main():
     print(f"Dataset: {DATASET_TYPE.upper()}")
     print(f"Beta values: {beta_values}")
     print(f"Repetitions per beta: {num_repetitions}")
-    if isinstance(num_epochs, dict):
-        print(f"Epochs per training: Variable by beta")
-        for beta in sorted(set(list(num_epochs.keys()) + beta_values)):
-            if beta in num_epochs:
-                print(f"  Beta {beta}: {num_epochs[beta]} epochs")
-            else:
-                print(f"  Beta {beta}: {num_epochs.get(beta, 1000)} epochs (default)")
-    elif callable(num_epochs):
-        print(f"Epochs per training: Adaptive function")
-        for beta in [0] + beta_values:
-            print(f"  Beta {beta}: {num_epochs(beta)} epochs")
-    else:
-        print(f"Epochs per training: {num_epochs}")
+    # if isinstance(num_epochs, dict):
+    #     print(f"Epochs per training: Variable by beta")
+    #     for beta in sorted(set(list(num_epochs.keys()) + beta_values)):
+    #         if beta in num_epochs:
+    #             print(f"  Beta {beta}: {num_epochs[beta]} epochs")
+    #         else:
+    #             print(f"  Beta {beta}: {num_epochs.get(beta, 1000)} epochs (default)")
+    # elif callable(num_epochs):
+    #     print(f"Epochs per training: Adaptive function")
+    #     for beta in [0] + beta_values:
+    #         print(f"  Beta {beta}: {num_epochs(beta)} epochs")
+    # else:
+    #     print(f"Epochs per training: {num_epochs}")
     
     if isinstance(a0, dict):
         print(f"Learning rate (a0): Variable by beta")
@@ -151,7 +150,7 @@ def main():
                 n_train_per_group=1000,
                 n_test_per_group=1000,
                 batch_size=2000,
-                random_seed=42000,  # Fixed seed for consistent dataset
+                random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
@@ -160,7 +159,7 @@ def main():
                 n_train_per_group=1000,
                 n_test_per_group=1000,
                 batch_size=2000,
-                random_seed=42000,  # Fixed seed for consistent dataset
+                random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
     else:
@@ -182,10 +181,9 @@ def main():
     results = run_beta_experiments(
         beta_values=beta_values,
         num_repetitions=num_repetitions,
-        num_epochs=num_epochs,
         a0=a0,  # Now supports dict, callable, or float
-        b=0.55,
-        sigma_gauss_prior=1000,
+        b=0.5,
+        sigma_gauss_prior=5,
         device=device,
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
@@ -193,7 +191,9 @@ def main():
         mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None,
         train_loader=train_loader,  # Pass the pre-created dataloaders
         test_loader=test_loader,
-        save_output_products_csv=True  # Enable CSV output
+        save_output_products_csv=False, 
+        moving_average_outputs=True,
+        alpha=0.00025, eta=0.1, eps=1e-7
     )
     
     # Get training set size for bounds computation
@@ -206,7 +206,6 @@ def main():
     hyperparams = create_hyperparameter_dict(
         beta_values=beta_values,
         num_repetitions=num_repetitions,
-        num_epochs=num_epochs,
         a0=a0,
         b=0.55,
         sigma_gauss_prior=1000,
@@ -219,6 +218,9 @@ def main():
         test_dataset_size=len(test_loader.dataset),
         batch_size=train_loader.batch_size,
         random_seed=42000,  # The seed used for dataset creation
+        alpha=0.1,
+        eta=0.1,
+        eps=1e-6,
         normalize=True
     )
     
@@ -245,12 +247,12 @@ def main():
     experiment_params = {
         'beta_values': beta_values,
         'num_repetitions': num_repetitions,
-        'num_epochs': num_epochs,
         'a0': a0,
         'sigma_gauss_prior': 1000,
         'dataset_type': DATASET_TYPE,
         'use_random_labels': USE_RANDOM_LABELS,
-        'hyperparams': hyperparams
+        'hyperparams': hyperparams,
+
     }
     
     plot_beta_results(plot_results, n_train, **experiment_params)
@@ -289,14 +291,6 @@ def main():
     
     from results_manager import generate_hyperparameter_hash
     print(f"  Hyperparameter hash: {generate_hyperparameter_hash(hyperparams)}")
-    
-    if TEST_MODE:
-        print(f"\nTo run the full experiment:")
-        print(f"  1. Set TEST_MODE = False in the script")
-        print(f"  2. Re-run the script")
-        print(f"  3. The full experiment will take much longer!")
-    print(f"{'='*70}")
-
 
 if __name__ == "__main__":
     

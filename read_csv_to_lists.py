@@ -7,6 +7,58 @@ from losses import BoundedCrossEntropyLoss, ZeroOneLoss
 from bounds import invert_kl, ln
 from training import transform_bce_to_unit_interval
 import numpy as np
+
+
+def read_csv_2_lists(csv_file_path):
+    """
+    Read CSV file and return data organized by beta.
+    
+    Args:
+        csv_file_path: Path to the CSV file
+    Returns:
+        list 
+    """     
+    if not os.path.exists(csv_file_path):
+        print(f"File not found: {csv_file_path}")
+        return []
+    
+    # Initialize data structure
+    beta_values = []
+    list_train_BCE_losses = []
+    list_test_BCE_losses = []
+    list_train_01_losses = []
+    list_test_01_losses = []
+    list_EMA_train_BCE_losses = []
+    list_EMA_test_BCE_losses = []
+    list_EMA_train_01_losses = []
+    list_EMA_test_01_losses = []
+    with open(csv_file_path, 'r') as f:
+        reader = csv.reader(f)
+        headers = next(reader)
+        beta_idx = headers.index("Beta")
+        train_BCE_idx = headers.index("Train_BCE")
+        test_BCE_idx = headers.index("Test_BCE")
+        train_01_idx = headers.index("Train_0-1")
+        test_01_idx = headers.index("Test_0-1")
+        EMA_train_BCE_idx = headers.index("EMA_Train_BCE")
+        EMA_test_BCE_idx = headers.index("EMA_Test_BCE")
+        EMA_train_01_idx = headers.index("EMA_Train_0-1")
+        EMA_test_01_idx = headers.index("EMA_Test_0-1")
+        for row in reader:
+            if len(row) > max(beta_idx, train_BCE_idx, test_BCE_idx, train_01_idx, test_01_idx, EMA_train_BCE_idx, EMA_test_BCE_idx, EMA_train_01_idx, EMA_test_01_idx):
+                beta_values.append(float(row[beta_idx]))
+                list_train_BCE_losses.append(float(row[train_BCE_idx]))
+                list_test_BCE_losses.append(float(row[test_BCE_idx]))
+                list_train_01_losses.append(float(row[train_01_idx]))
+                list_test_01_losses.append(float(row[test_01_idx]))
+                list_EMA_train_BCE_losses.append(float(row[EMA_train_BCE_idx]))
+                list_EMA_test_BCE_losses.append(float(row[EMA_test_BCE_idx]))
+                list_EMA_train_01_losses.append(float(row[EMA_train_01_idx]))
+                list_EMA_test_01_losses.append(float(row[EMA_test_01_idx]))
+
+    print(f"   Loaded {len(beta_values)} rows")
+    return beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses, list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses
+
 def read_csv_to_lists(csv_file_path, data_type="unknown"):
     """
     Read CSV file and return data organized by beta.
@@ -87,6 +139,8 @@ def main():
     # Read the CSV files
     train_data = read_csv_to_lists(train_csv_path, "train")
     test_data = read_csv_to_lists(test_csv_path, "test")
+
+    
     lmax = 4
     def bce (v):
         psi = math.exp (-lmax)+(1-2*math.exp(-lmax))/(1+math.exp(-v))

@@ -48,7 +48,7 @@ class SGLD(optimizer.Optimizer):
             if sigma_gauss_prior.imag != 0:
                 raise ValueError(f"sigma_gauss_prior must be a real number.")
 
-        weight_decay = 1 / (sigma_gauss_prior * sigma_gauss_prior)
+        weight_decay = 1 / (sigma_gauss_prior * sigma_gauss_prior * beta) if beta > 0 else 1/(sigma_gauss_prior * sigma_gauss_prior)
         defaults = dict(lr=lr, weight_decay=weight_decay, beta=beta, add_noise=add_noise)
         super(SGLD, self).__init__(params, defaults)
     

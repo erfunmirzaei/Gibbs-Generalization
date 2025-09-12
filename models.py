@@ -45,54 +45,15 @@ class MNISTNN(nn.Module):
         return x
 
 
-def initialize_kaiming_and_get_prior_sigma(model, activation='relu', mode='fan_in', verbose=True):
+def initialize_nn_weights_gaussian(model: nn.Module, sigma: float, seed: int = 42) -> nn.Module:
     """
-    Initialize model with Kaiming initialization and compute appropriate prior sigma.
+    Initialize neural network weights from a Gaussian distribution with mean 0 and std sigma.
     
     Args:
-        model: PyTorch model to initialize
-        activation: Activation function ('relu', 'linear', etc.)
-        mode: Fan mode ('fan_in', 'fan_out', 'fan_avg')
-        verbose: Whether to print initialization details
-        
-    Returns:
-        float: Computed sigma_prior that should be used for weight decay
+        model (nn.Module): The neural network model to initialize.
+        sigma (float): Standard deviation of the Gaussian distribution.
     """
-    sigma_values = []
-    
-    with torch.no_grad():
-        for name, param in model.named_parameters():
-            if 'weight' in name and param.dim() >= 2:  # Only for weight matrices
-                # Apply Kaiming initialization
-                fan_in = param.size(1)
-                fan_out = param.size(0)
-                
-                if mode == 'fan_in':
-                    fan = fan_in
-                elif mode == 'fan_out':
-                    fan = fan_out
-                else:  # fan_avg
-                    fan = (fan_in + fan_out) / 2
-                
-                # For ReLU: gain = sqrt(2), for other activations adjust accordingly
-                gain = np.sqrt(2.0) if activation == 'relu' else 1.0
-                std = gain / np.sqrt(fan)
-                
-                # Initialize the parameter
-                param.normal_(0, std)
-                sigma_values.append(std)
-                
-                if verbose:
-                    print(f"Layer {name}: fan_in={fan_in}, fan_out={fan_out}, std={std:.6f}")
-            elif 'bias' in name:
-                # Initialize biases to zero
-                param.zero_()
-    
-    # Use the average std as the prior sigma
-    sigma_prior = np.mean(sigma_values) if sigma_values else 0.1
-    
-    if verbose:
-        print(f"Computed sigma_prior from Kaiming init: {sigma_prior:.6f}")
-        print(f"Corresponding weight_decay: {1/(2*sigma_prior**2):.6f}")
-    
-    return sigma_prior
+    for param in model.parameters():
+        if param.requires_grad:
+            nn.init.normal_(param.data, mean=0.0, std=sigma, generator=torch.Generator().manual_seed(seed))
+    return model

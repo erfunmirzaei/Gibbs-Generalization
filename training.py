@@ -14,7 +14,7 @@ import os
 import csv
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
-from models import SynthNN, MNISTNN, initialize_kaiming_and_get_prior_sigma
+from models import SynthNN, MNISTNN, initialize_nn_weights_gaussian
 from sgld import SGLD
 from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
                     get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels)
@@ -37,6 +37,60 @@ def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
     denominator = l_max + ln_term
     return numerator / denominator
 
+def save_moving_average_losses_to_csv(                 
+        list_train_BCE_losses,
+        list_test_BCE_losses,
+        list_train_01_losses,
+        list_test_01_losses,
+        list_EMA_train_BCE_losses,
+        list_EMA_test_BCE_losses,   
+        list_EMA_train_01_losses,
+        list_EMA_test_01_losses,
+        filename_prefix,
+        beta_values,
+        sample_size,
+        summary_string
+ ):
+    """
+    Save moving average losses to a CSV file.
+    Args:
+        list_train_BCE_losses: List of training BCE losses for different betas
+        list_test_BCE_losses: List of test BCE losses for different betas
+        list_train_01_losses: List of training 0-1 losses for different betas
+        list_test_01_losses: List of test 0-1 losses for different betas
+        list_EMA_train_BCE_losses: List of EMA of training BCE losses for different betas
+        list_EMA_test_BCE_losses: List of EMA of test BCE losses for different betas
+        list_EMA_train_01_losses: List of EMA of training 0-1 losses for different betas
+        list_EMA_test_01_losses: List of EMA of test 0-1 losses for different betas
+        filename_prefix: Prefix for the CSV file (e.g., 'experiment_2024')
+        beta_values: List of beta values for metadata
+    """    
+    # Create CSV directory if it doesn't exist
+    os.makedirs('csv_EMA', exist_ok=True)
+    
+    # Save training data
+    filename = f"csv_EMA/{filename_prefix}.csv"
+
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        # Write column headers
+        headers = ['Sample_size', 'Beta','BCE_Train', 'BCE_Test', '0-1_Train', '0-1_Test', 
+                   'EMA_BCE_Train', 'EMA_BCE_Test', 'EMA_0-1_Train', 'EMA_0-1_Test', ]
+        writer.writerow(headers)
+        
+        # Write data rows
+        for i, beta in enumerate(sorted(beta_values)):
+            row = [sample_size, beta, list_train_BCE_losses[i], list_test_BCE_losses[i], 
+                   list_train_01_losses[i], list_test_01_losses[i],
+                   list_EMA_train_BCE_losses[i], list_EMA_test_BCE_losses[i],
+                   list_EMA_train_01_losses[i], list_EMA_test_01_losses[i]]
+            writer.writerow(row)
+        
+        writer.writerow([])  # Empty row for separation
+        writer.writerow(['Summary:', summary_string])
+    print(f"   EMA CSV saved: {filename} ({len(beta_values)} beta values)")
+
+    return filename
 
 def save_output_label_products_to_csv(train_data, test_data, filename_prefix, beta_values):
     """
@@ -151,10 +205,11 @@ def collect_output_label_products(outputs, batch_y, dataset_type='synth'):
     return products.detach().cpu().numpy().tolist()
 
 
-def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100, 
+def train_sgld_model(model, train_loader, test_loader, 
                      a0: float = 1e-3, b: float = 0.5, sigma_gauss_prior: float = 0.1, 
                      beta: float = 1.0, device: str = 'cpu', dataset_type: str = 'synth',
-                     l_max: float = 2.0, collect_output_products: bool = False):
+                     l_max: float = 2.0, collect_output_products: bool = False, moving_average_outputs: bool = False,
+                     alpha: float = 0.1, eta: float = 0.1, eps: float = 1e-3):
     """
     Train the neural network with SGLD and bounded cross entropy loss.
     
@@ -171,6 +226,9 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         dataset_type: 'synth' or 'mnist' for proper loss computation
         l_max: Maximum loss value for transformation to [0,1] interval
         collect_output_products: If True, collect output * label products
+        alpha: Smoothing factor for EMA of training loss
+        eta: Threshold parameter for learning rate scheduler (lr_t = max(a0 * t^(-b), eta/beta))
+        eps: Convergence threshold for EMA of training loss
         
     Returns:
         Tuple containing: (train_losses, test_losses, train_accuracies, test_accuracies, 
@@ -196,7 +254,7 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     
     # Learning rate scheduler with threshold: lr_t = max(a0 * t^(-b), 0.01)
     # This stops the decay when learning rate reaches 0.01
-    lr_threshold = 0.005
+    lr_threshold = eta / beta if beta > 0 else 1e-5  # Avoid division by zero for beta=0
     def lr_lambda_with_threshold(epoch):
         power_law_lr = (epoch + 1) ** (-b)
         # Convert to actual learning rate value and check threshold
@@ -208,14 +266,21 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
     
-    train_losses = []
-    test_losses = []
-    train_accuracies = []
-    test_accuracies = []
-    train_zero_one_losses = []
-    test_zero_one_losses = []
+    train_losses = [1.0]  # Initialize with 0.0 for epoch 0
+    test_losses = [1.0]  # Initialize with 0.0 for epoch 0
+    train_accuracies = [1.0]  # Initialize with 0.0 for epoch 0
+    test_accuracies = [1.0]  # Initialize with 0.0 for epoch 0
+    train_zero_one_losses = [1.0]  # Initialize with 0.0 for epoch 0
+    test_zero_one_losses = [1.0]  # Initialize with 0.0 for epoch 0
     learning_rates = []
+    EMA_train_losses = [0.0, 1.0]  # Initialize with 1.0 for epoch 0
+    EMA_alpha = alpha  # Smoothing factor for EMA of loss
     
+    EMA_train_BCE_losses = [0.0, 1.0]  # Separate EMA for BCE losses if needed
+    EMA_test_BCE_losses = [0.0, 1.0]
+    EMA_train_zero_one_losses = [0.0, 1.0]
+    EMA_test_zero_one_losses = [0.0, 1.0]
+    EMA_alpha_BCE = 0.01
     # Initialize output product collections if requested
     train_output_products = [] if collect_output_products else None
     test_output_products = [] if collect_output_products else None
@@ -228,8 +293,56 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
     
     # Progress tracking
     start_time = time.time()
-    
-    for epoch in range(num_epochs):
+    epoch = 0
+    # if beta == 0.0, I have to sample from the prior many times and take the average both for train and test losses
+    if beta == 0.0:
+        num_prior_samples = 1000
+
+        model_cpu = model.to('cpu')
+        for i in range(num_prior_samples):
+            learning_rates.append(0.0)  # No learning rate for beta=0 prior sampling
+            # Reinitialize model weights from prior
+            initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=i)
+            # Compute train loss
+            model_cpu.eval()
+            with torch.no_grad():
+                train_loss_total = 0.0
+                zero_one_loss_total = 0.0
+                for batch_x, batch_y in train_loader:
+                    outputs = model_cpu(batch_x)
+                    loss = criterion(outputs, batch_y)
+                    if using_bce_for_optimization:
+                        loss = transform_bce_to_unit_interval(loss, l_max)
+                    train_loss_total += loss.item()
+                    zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
+                train_zero_one_losses.append(zero_one_loss_total / len(train_loader))
+                train_losses.append(train_loss_total / len(train_loader))
+
+                # Compute test loss
+                test_loss_total = 0.0
+                zero_one_loss_total = 0.0
+                for batch_x, batch_y in test_loader:
+                    outputs = model_cpu(batch_x)
+                    loss = criterion(outputs, batch_y)
+                    if using_bce_for_optimization:
+                        loss = transform_bce_to_unit_interval(loss, l_max)
+                    test_loss_total += loss.item()
+                    zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
+                test_losses.append(test_loss_total / len(test_loader))
+                test_zero_one_losses.append(zero_one_loss_total / len(test_loader))
+
+            print(f'Beta=0.0: Averaged over {num_prior_samples} prior samples - '
+                f'Train Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, '
+                f'EMA Train Loss: {EMA_train_BCE_losses[-1]:.4f}, EMA Test Loss: {EMA_test_BCE_losses[-1]:.4f}, '
+                f'EMA Train Zero-One Loss: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test Zero-One Loss: {EMA_test_zero_one_losses[-1]:.4f}'
+                )
+            EMA_train_BCE_losses.append(0.5 * EMA_alpha_BCE * train_losses[-1] + 0.5 * EMA_alpha_BCE * train_losses[-2] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+            EMA_test_BCE_losses.append(0.5 * EMA_alpha_BCE * test_losses[-1] + 0.5 * EMA_alpha_BCE * test_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+            EMA_train_zero_one_losses.append(0.5 * EMA_alpha_BCE * train_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * train_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+            EMA_test_zero_one_losses.append(0.5 * EMA_alpha_BCE * test_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * test_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+            epoch += 1
+
+    while (EMA_train_losses[-1] < EMA_train_losses[-2] or epoch < 1000) and beta > 0.0:
         # Training phase
         model.train()
         train_loss_total = 0.0
@@ -281,7 +394,8 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
             train_zero_one_total += zero_one_loss.item()
             train_total += batch_y.size(0)
             train_correct += (predicted == batch_y).sum().item()
-        
+            
+         
         # Store epoch training products
         if collect_output_products:
             train_output_products.append(epoch_train_products)
@@ -297,7 +411,9 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         train_losses.append(avg_train_loss)
         train_zero_one_losses.append(avg_train_zero_one)
         train_accuracies.append(train_accuracy)
-        
+
+        EMA_train_losses.append(0.5 * EMA_alpha * train_losses[-1] + 0.5 * EMA_alpha * train_losses[-2] + (1 - EMA_alpha) * EMA_train_losses[-1])
+
         # Test/Evaluation phase
         model.eval()
         test_loss_total = 0.0
@@ -352,31 +468,45 @@ def train_sgld_model(model, train_loader, test_loader, num_epochs: int = 100,
         test_accuracies.append(test_accuracy)
         
         # More frequent progress reporting with time estimates
-        if epoch % max(1, num_epochs // 10) == 0 or epoch == num_epochs - 1:
+        if (epoch + 1) % 10 == 0 or epoch == 0:
             elapsed_time = time.time() - start_time
             epochs_per_second = (epoch + 1) / elapsed_time if elapsed_time > 0 else 0
-            eta_seconds = (num_epochs - epoch - 1) / epochs_per_second if epochs_per_second > 0 else 0
-            eta_minutes = eta_seconds / 60
+
             
-            print(f'Epoch [{epoch+1:>6}/{num_epochs}] '
+            print(f'Epoch [{epoch+1:>6}] '
+                  f'EMA diff: {EMA_train_losses[-1] - EMA_train_losses[-2]:.6f} '
                   f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
                   f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
                   f'LR: {current_lr:.2e} '
                   f'Speed: {epochs_per_second:.1f} ep/s '
-                  f'ETA: {eta_minutes:.1f}min')
+                  f'EMA Train Loss: {EMA_train_losses[-1]:.4f}'
+                  )
             
             # GPU memory monitoring (if using CUDA)
             if device == 'cuda':
                 print(f'GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.0f}MB allocated, '
                       f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
-    
+            
+        
+        EMA_train_BCE_losses.append(0.5 * EMA_alpha_BCE * train_losses[-1] + 0.5 * EMA_alpha_BCE * train_losses[-2] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+        EMA_test_BCE_losses.append(0.5 * EMA_alpha_BCE * test_losses[-1] + 0.5 * EMA_alpha_BCE * test_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+        EMA_train_zero_one_losses.append(0.5 * EMA_alpha_BCE * train_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * train_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+        EMA_test_zero_one_losses.append(0.5 * EMA_alpha_BCE * test_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * test_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+        
+        epoch += 1
+    print(f"Training completed in {time.time() - start_time:.1f} seconds over {epoch} epochs.")
+    print(f"Final Training Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, EMA Diff: {EMA_train_losses[-1] - EMA_train_losses[-2]:.6f}, EMA Train Loss: {EMA_train_losses[-1]:.4f}")
     if collect_output_products:
         return (train_losses, test_losses, train_accuracies, test_accuracies, 
                 train_zero_one_losses, test_zero_one_losses, learning_rates,
-                train_output_products, test_output_products)
+                train_output_products, test_output_products, EMA_train_losses)
+    elif moving_average_outputs:
+        return (train_losses, test_losses, train_accuracies, test_accuracies,
+                train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
+                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses)
     else:
         return (train_losses, test_losses, train_accuracies, test_accuracies, 
-                train_zero_one_losses, test_zero_one_losses, learning_rates)
+                train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses)
 
 
 def save_checkpoint(results, checkpoint_path, experiment_config, completed_repetitions):
@@ -453,11 +583,12 @@ def generate_checkpoint_filename(experiment_config):
     return f"checkpoints/checkpoint_{dataset_str}_{beta_str}_rep{experiment_config['num_repetitions']}_{timestamp}.json"
 
 
-def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000, 
+def run_beta_experiments(beta_values, num_repetitions=50,
                          a0=1e-1, b=0.5, sigma_gauss_prior=1000000, 
                          device='cpu', dataset_type='synth', use_random_labels=False,
                          l_max=2.0, mnist_classes=None, train_loader=None, test_loader=None,
-                         checkpoint_path=None, save_every=1, save_output_products_csv=False):
+                         checkpoint_path=None, save_every=1, save_output_products_csv=False,
+                         moving_average_outputs=False, alpha: float = 0.1, eta: float = 0.1, eps: float = 1e-3):
     """
     Run experiments across different beta values with multiple repetitions.
     
@@ -487,21 +618,24 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         checkpoint_path: Path to checkpoint file (if None, auto-generated)
         save_every: Save checkpoint every N repetitions (default: 1)
         save_output_products_csv: If True, save output * label products to CSV files
+        alpha: Smoothing factor for EMA of training loss
+        eta: Threshold parameter for learning rate scheduler
+        eps: Convergence threshold for EMA of training loss
         
     Returns:
         Dictionary containing results for each beta value (including beta=0 if not present)
     """
-    # Helper function to determine epochs for each beta
-    def get_epochs_for_beta(beta, num_epochs):
-        """Determine number of epochs based on beta value and num_epochs specification."""
-        if isinstance(num_epochs, int):
-            return num_epochs
-        elif isinstance(num_epochs, dict):
-            return num_epochs.get(beta, 1000)  # Default to 1000 if beta not in dict
-        elif callable(num_epochs):
-            return num_epochs(beta)
-        else:
-            raise ValueError(f"num_epochs must be int, dict, or callable, got {type(num_epochs)}")
+    # # Helper function to determine epochs for each beta
+    # def get_epochs_for_beta(beta, num_epochs):
+    #     """Determine number of epochs based on beta value and num_epochs specification."""
+    #     if isinstance(num_epochs, int):
+    #         return num_epochs
+    #     elif isinstance(num_epochs, dict):
+    #         return num_epochs.get(beta, 1000)  # Default to 1000 if beta not in dict
+    #     elif callable(num_epochs):
+    #         return num_epochs(beta)
+    #     else:
+    #         raise ValueError(f"num_epochs must be int, dict, or callable, got {type(num_epochs)}")
     
     # Helper function to determine a0 for each beta
     def get_a0_for_beta(beta, a0):
@@ -526,7 +660,6 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         'beta_values': beta_values,
         'extended_beta_values': extended_beta_values,
         'num_repetitions': num_repetitions,
-        'num_epochs': num_epochs,
         'a0': a0,
         'b': b,
         'sigma_gauss_prior': sigma_gauss_prior,
@@ -574,12 +707,18 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
             test_output_products_data[beta] = {}
         print(f"📊 Output * label products will be saved to CSV files")
     
-    print(f"\nConfiguration:")
-    print(f"Epochs per beta:")
-    for beta in sorted(extended_beta_values):
-        epochs = get_epochs_for_beta(beta, num_epochs)
-        print(f"  Beta {beta}: {epochs} epochs")
-    
+    if moving_average_outputs:
+        list_train_BCE_losses = []
+        list_test_BCE_losses = []
+        list_train_01_losses = []
+        list_test_01_losses = []
+        list_EMA_train_BCE_losses = []
+        list_EMA_test_BCE_losses = []
+        list_EMA_train_01_losses = []
+        list_EMA_test_01_losses = []
+        print(f"📊 Moving average of outputs enabled")
+
+    print(f"\nConfiguration:")    
     print(f"Learning rate (a0) per beta:")
     for beta in sorted(extended_beta_values):
         current_a0 = get_a0_for_beta(beta, a0)
@@ -596,11 +735,10 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
         
         # Run all beta values for this repetition
         for beta in sorted(extended_beta_values):
-            current_epochs = get_epochs_for_beta(beta, num_epochs)
             current_a0 = get_a0_for_beta(beta, a0)
             
             print(f"\n--- Beta = {beta} (Rep {rep+1}) ---")
-            print(f"Epochs: {current_epochs}, Learning rate: {current_a0}")
+            print(f"Learning rate: {current_a0}")
             
             # Use provided dataloaders or create fresh dataset for each repetition
             if train_loader is not None and test_loader is not None:
@@ -650,7 +788,6 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 model=model,
                 train_loader=current_train_loader,
                 test_loader=current_test_loader,
-                num_epochs=current_epochs,
                 a0=current_a0,
                 b=b,
                 sigma_gauss_prior=sigma_gauss_prior,
@@ -658,27 +795,43 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 device=device,
                 dataset_type=dataset_type,
                 l_max=l_max,
-                collect_output_products=save_output_products_csv
+                collect_output_products=save_output_products_csv,
+                moving_average_outputs=moving_average_outputs,
+                alpha=alpha,
+                eta=eta,
+                eps=eps
             )
             
             # Unpack results based on whether output products were collected
             if save_output_products_csv:
                 (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, 
-                 train_output_products, test_output_products) = training_results
+                 train_output_products, test_output_products, EMA_train_losses) = training_results
                 
                 # Store output products for this repetition and beta
                 # We only store the final epoch's data (last element of each list)
                 train_output_products_data[beta][rep] = train_output_products[-1] if train_output_products else []
                 test_output_products_data[beta][rep] = test_output_products[-1] if test_output_products else []
+            elif moving_average_outputs:
+                (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
+                 EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses) = training_results
             else:
-                (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _) = training_results
-            
+                (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses) = training_results
+
+            if moving_average_outputs:
+                list_train_BCE_losses.append(train_losses[-50])
+                list_test_BCE_losses.append(test_losses[-50])
+                list_train_01_losses.append(train_01_losses[-50])
+                list_test_01_losses.append(test_01_losses[-50])
+                list_EMA_train_BCE_losses.append(EMA_train_BCE_losses[-1])
+                list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
+                list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
+                list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
             # Store final values (last epoch)
             results[beta]['raw_train_bce'].append(train_losses[-1])
             results[beta]['raw_test_bce'].append(test_losses[-1])
             results[beta]['raw_train_01'].append(train_01_losses[-1])
             results[beta]['raw_test_01'].append(test_01_losses[-1])
-            
+
             print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                   f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
         
@@ -743,6 +896,44 @@ def run_beta_experiments(beta_values, num_repetitions=50, num_epochs=10000,
                 print(f"📊 Checkpoint CSV files saved:")
                 print(f"   📁 Training data: {train_csv_path}")
                 print(f"   📁 Test data: {test_csv_path}")
+            
+            # Save a csv file after each repetition if requested
+            elif moving_average_outputs:
+                # Generate filename prefix based on experiment parameters
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                experiment_desc = f"{dataset_type}"
+                if use_random_labels:
+                    experiment_desc += "_random"
+                experiment_desc += f"_beta{min(beta_values)}-{max(beta_values)}"                
+                filename_prefix = f"checkpoint_{experiment_desc}_{timestamp}"
+                
+                summary_string =  f"The LMC has been run with the following parameters:\n" \
+                f"  - Dataset type: {dataset_type}\n" \
+                f"  - Random labels: {use_random_labels}\n" \
+                f"  - Beta values: {sorted(extended_beta_values)}\n" \
+                f"  - Repetitions: {rep+1}\n" \
+                f"  - Learning rate (a0): {current_a0}\n" \
+                f"  - Learning rate decay (b): {b}\n" \
+                f"  - Gaussian prior sigma: {sigma_gauss_prior}\n" \
+                f" -  alpha: {alpha}\n" \
+                f" -  eta: {eta}\n" \
+                f" -  eps: {eps}\n"
+                
+                csv_path = save_moving_average_losses_to_csv(
+                    list_train_BCE_losses,
+                    list_test_BCE_losses,
+                    list_train_01_losses,
+                    list_test_01_losses,
+                    list_EMA_train_BCE_losses,
+                    list_EMA_test_BCE_losses,   
+                    list_EMA_train_01_losses,
+                    list_EMA_test_01_losses,
+                    filename_prefix,
+                    sorted(extended_beta_values),
+                    len(train_loader.dataset),
+                    summary_string
+                    
+                )
         
         print(f"\n✅ Completed repetition {rep+1}/{num_repetitions}")
         

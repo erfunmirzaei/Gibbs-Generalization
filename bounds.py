@@ -486,7 +486,7 @@ def save_results_to_file(results, n, filename=None, beta_values=None, num_repeti
         f.write("- All values are final errors after training completion\n")
         f.write("="*80 + "\n\n")
     
-def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_prior, 
+def generate_filename(beta_values, num_repetitions, a0, sigma_gauss_prior, 
                      dataset_type='synth', file_type='results', extension='txt', 
                      use_random_labels=False, hyperparams=None, **kwargs):
     """
@@ -495,11 +495,10 @@ def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_
     Args:
         beta_values: List of beta values tested
         num_repetitions: Number of repetitions per beta
-        num_epochs: Number of training epochs
         a0: Learning rate
         sigma_gauss_prior: Prior parameter
         dataset_type: Type of dataset ('synth', 'mnist', etc.)
-        file_type: Type of file ('results', 'plot', etc.')
+        file_type: Type of file ('results', 'plot', etc.)
         extension: File extension ('txt', 'png', etc.)
         use_random_labels: Whether random labels were used
         hyperparams: Full hyperparameter dictionary for hash generation
@@ -549,32 +548,32 @@ def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_
     else:
         sigma_str = f"sigma{sigma_gauss_prior:.2f}".replace('.', 'p')
     
-    # Format epochs
-    if isinstance(num_epochs, dict):
-        # For dict, show the range or summary
-        epoch_values = list(num_epochs.values())
-        if len(set(epoch_values)) == 1:
-            # All same epochs
-            epochs_val = epoch_values[0]
-            if epochs_val >= 1000:
-                epochs_str = f"ep{epochs_val//1000}k"
-            else:
-                epochs_str = f"ep{epochs_val}"
-        else:
-            # Variable epochs
-            min_epochs = min(epoch_values)
-            max_epochs = max(epoch_values)
-            epochs_str = f"ep{min_epochs}-{max_epochs}"
-    elif callable(num_epochs):
-        # For callable, use a generic label
-        epochs_str = "ep_adaptive"
-    elif isinstance(num_epochs, int):
-        if num_epochs >= 1000:
-            epochs_str = f"ep{num_epochs//1000}k"
-        else:
-            epochs_str = f"ep{num_epochs}"
-    else:
-        epochs_str = "ep_unknown"
+    # # Format epochs
+    # if isinstance(num_epochs, dict):
+    #     # For dict, show the range or summary
+    #     epoch_values = list(num_epochs.values())
+    #     if len(set(epoch_values)) == 1:
+    #         # All same epochs
+    #         epochs_val = epoch_values[0]
+    #         if epochs_val >= 1000:
+    #             epochs_str = f"ep{epochs_val//1000}k"
+    #         else:
+    #             epochs_str = f"ep{epochs_val}"
+    #     else:
+    #         # Variable epochs
+    #         min_epochs = min(epoch_values)
+    #         max_epochs = max(epoch_values)
+    #         epochs_str = f"ep{min_epochs}-{max_epochs}"
+    # elif callable(num_epochs):
+    #     # For callable, use a generic label
+    #     epochs_str = "ep_adaptive"
+    # elif isinstance(num_epochs, int):
+    #     if num_epochs >= 1000:
+    #         epochs_str = f"ep{num_epochs//1000}k"
+    #     else:
+    #         epochs_str = f"ep{num_epochs}"
+    # else:
+    #     epochs_str = "ep_unknown"
     
     # Add random labels indicator
     labels_str = "randlabels" if use_random_labels else "reallabels"
@@ -595,7 +594,7 @@ def generate_filename(beta_values, num_repetitions, num_epochs, a0, sigma_gauss_
             hash_str = f"_hash{hash_value}"
     
     # Create comprehensive filename
-    filename = f"sgld_{file_type}_{dataset_type}_{labels_str}_{beta_str}_{lr_str}_{sigma_str}_{epochs_str}_rep{num_repetitions}{hash_str}.{extension}"
+    filename = f"sgld_{file_type}_{dataset_type}_{labels_str}_{beta_str}_{lr_str}_{sigma_str}_rep{num_repetitions}{hash_str}.{extension}"
     
     return filename
 
