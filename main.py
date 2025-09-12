@@ -34,45 +34,11 @@ DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
 # - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
 MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
 
-def gpu_diagnostic():
-    """Perform GPU diagnostic and optimization setup."""
-    if not torch.cuda.is_available():
-        print("❌ CUDA not available - using CPU only")
-        print("Training will be significantly slower on CPU")
-        return 'cpu'
-    
-    print("✅ CUDA available")
-    device_name = torch.cuda.get_device_name(0)
-    memory_gb = torch.cuda.get_device_properties(0).total_memory / 1024**3
-    print(f"GPU: {device_name}")
-    print(f"GPU Memory: {memory_gb:.1f} GB")
-    
-    # Test GPU performance
-    print("Testing GPU performance...")
-    x = torch.randn(2000, 2000, device='cuda')
-    y = torch.randn(2000, 2000, device='cuda')
-    
-    start_time = time.time()
-    z = torch.mm(x, y)
-    torch.cuda.synchronize()
-    gpu_time = time.time() - start_time
-    
-    print(f"GPU matrix multiply (2000x2000): {gpu_time:.4f}s")
-    
-    # Enable optimizations
-    if torch.backends.cudnn.is_available():
-        torch.backends.cudnn.benchmark = True
-        torch.backends.cudnn.enabled = True
-        print("✅ cuDNN optimizations enabled")
-    
-    return 'cuda'
-
 
 def main():
     """Main experiment function."""
     # GPU diagnostic and setup
-    # device = gpu_diagnostic()
-    device = 'cpu'  # Force CPU for compatibility in this environment
+    device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
     # Define beta values to test
     if TEST_MODE:
         print("\n" + "="*50)
