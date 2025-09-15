@@ -14,7 +14,7 @@ import os
 import csv
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
-from models import SynthNN, MNISTNN, initialize_nn_weights_gaussian
+from models import SynthNN, MNISTNN, initialize_nn_weights_gaussian, MNISTNN2
 from sgld import SGLD
 from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
                     get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels)
@@ -780,6 +780,8 @@ def run_beta_experiments(beta_values, num_repetitions=50,
             # Create fresh model for each beta-repetition combination
             if dataset_type == 'mnist':
                 model = MNISTNN(input_dim=28*28, hidden_dim=500, output_dim=1)
+                # model = MNISTNN2(input_dim=28*28, hidden_dim=1000, output_dim=1)
+
             else:
                 model = SynthNN(input_dim=4, hidden_dim=500)
             

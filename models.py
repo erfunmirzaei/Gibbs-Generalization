@@ -44,6 +44,25 @@ class MNISTNN(nn.Module):
         x = self.fc2(x)  # No activation, raw logits
         return x
 
+class MNISTNN2(nn.Module):
+    """
+    Neural network for MNIST binary classification (classes 0 and 1 only).
+    Architecture: 1 hidden layer with 50 units, input=784, output=1 (binary classification)
+    """
+
+    def __init__(self, input_dim: int = 784, hidden_dim: int = 50, output_dim: int = 1):
+        super(MNISTNN2, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)  # Hidden layer
+        self.fc3 = nn.Linear(hidden_dim, output_dim)  # Single output for binary classification
+
+    def forward(self, x):
+        x = x.view(x.size(0), -1)  # Flatten for MNIST (batch_size, 28*28)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)  # No activation, raw logits
+        return x
+
 
 def initialize_nn_weights_gaussian(model: nn.Module, sigma: float, seed: int = 42) -> nn.Module:
     """

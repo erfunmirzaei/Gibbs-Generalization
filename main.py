@@ -23,7 +23,7 @@ from plot_utils import plot_beta_results
 TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = True
+USE_RANDOM_LABELS = False
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
@@ -34,11 +34,11 @@ DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
 # - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
 MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
 
-
 def main():
     """Main experiment function."""
     # GPU diagnostic and setup
-    device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+    # device = 'cuda:5'
+    device = 'cpu'  # Force CPU for compatibility in this environment
     # Define beta values to test
     if TEST_MODE:
         print("\n" + "="*50)
@@ -48,10 +48,10 @@ def main():
 
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [1]  # Minimal set for testing
+            beta_values = [125]  # Minimal set for testing
             num_repetitions = 1  # Very fast testing
             # num_epochs = {0: 1, 1: 3000}  # Much fewer epochs
-            a0 = {0: 1e-10, 1: 0.01}
+            a0 = {0: 1e-10, 125: 0.01}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
@@ -61,11 +61,13 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
+            # beta_values = [1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment
             num_repetitions = 1  # Full experiment
             # num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 40000, 4000: 40000, 8000: 40000, 16000: 40000}
-            # a0 = {0: 1e-10, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
-            a0 = {0: 1e-10, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
+            a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment

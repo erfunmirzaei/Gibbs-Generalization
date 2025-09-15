@@ -70,7 +70,10 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    csv_filename = "checkpoint_mnist_beta250-16000_20250911_113247.csv"
+    csv_filename = "checkpoint_mnist_random_beta1000-64000_20250914_115609.csv"
+    #"checkpoint_mnist_beta250-16000_20250912_192105.csv"
+    #"checkpoint_mnist_random_beta250-16000_20250912_163239.csv"
+    #"checkpoint_mnist_beta250-16000_20250911_113247.csv"
     #"checkpoint_mnist_random_beta250-16000_20250911_034846.csv"
     #"checkpoint_mnist_beta250-16000_20250910_233202.csv"
     #"checkpoint_mnist_random_beta250-16000_20250910_211119.csv"
@@ -193,7 +196,6 @@ if __name__ == "__main__":
     # Use linear scale for x-axis
     # ax1.set_xscale('linear')
     ax1.set_xscale('log')
-    ax1.set_yscale('log')
     # Plot 2: Zero-One Train/Test + KL Analysis (no generalization bounds/errors)
     ax2.errorbar(beta_values[1:], list_EMA_train_01_losses[1:], fmt='o-', label='Train 0-1', linewidth=2, markersize=5, capsize=3, color=train_color)
     ax2.errorbar(beta_values[1:], list_EMA_test_01_losses[1:], fmt='s-', label='Test 0-1', linewidth=2, markersize=5, capsize=3, color=test_color)
@@ -210,7 +212,6 @@ if __name__ == "__main__":
     # ax2.set_xscale('linear')
     # log-log plot
     ax2.set_xscale('log')
-    ax2.set_yscale('log')
     plt.tight_layout()
     
     csv_filename = csv_filename.replace('.csv', '_plot.png')
