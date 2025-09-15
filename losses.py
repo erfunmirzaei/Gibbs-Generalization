@@ -42,7 +42,37 @@ class TangentLoss(nn.Module):
         elif self.reduction == 'sum':
             return loss.sum()
         return loss
-    
+
+class SavageLoss(nn.Module):
+    """
+    Savage loss: phi(v) = 1/(1 + exp(v))^2
+    where v = y * logits, with y in {-1, +1}
+    """
+
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        assert reduction in ('none', 'mean', 'sum')
+        self.reduction = reduction
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        """
+        logits: Tensor of shape (N,) or (N, 1)
+        targets: Tensor of shape (N,) with values {+1, -1}
+        """
+
+        # Ensure targets are {-1, +1}
+        y = targets.float()
+        if y.min() == 0:
+            y = y * 2 - 1
+
+        v = logits.flatten() * y
+        loss = 1 / (1 + torch.exp(v)).pow(2)
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
 class BoundedCrossEntropyLoss(nn.Module):
     def __init__(self, ell_max=4.0):
         super(BoundedCrossEntropyLoss, self).__init__()

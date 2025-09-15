@@ -59,9 +59,6 @@ def read_csv_2_lists(csv_file_path):
                 list_EMA_train_01_losses.append(float(row[EMA_train_01_idx]))
                 list_EMA_test_01_losses.append(float(row[EMA_test_01_idx]))
 
-            elif len(row) > 1 and row[0] == 'Summary:':
-                summary_string = ', '.join(row[1:])
-                print(f"Summary from CSV: {summary_string}")
     print(f"   Loaded {len(beta_values)} rows")
     return beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses, list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples
 
@@ -70,9 +67,8 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    csv_filename = "checkpoint_mnist_random_beta1000-64000_20250914_115609.csv"
+    csv_filename = "checkpoint_mnist_random_beta250-16000_20250912_163239.csv"
     #"checkpoint_mnist_beta250-16000_20250912_192105.csv"
-    #"checkpoint_mnist_random_beta250-16000_20250912_163239.csv"
     #"checkpoint_mnist_beta250-16000_20250911_113247.csv"
     #"checkpoint_mnist_random_beta250-16000_20250911_034846.csv"
     #"checkpoint_mnist_beta250-16000_20250910_233202.csv"

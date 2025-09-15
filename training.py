@@ -13,7 +13,7 @@ import json
 import os
 import csv
 from datetime import datetime
-from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss
+from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from models import SynthNN, MNISTNN, initialize_nn_weights_gaussian, MNISTNN2
 from sgld import SGLD
 from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
@@ -209,7 +209,7 @@ def train_sgld_model(model, train_loader, test_loader,
                      a0: float = 1e-3, b: float = 0.5, sigma_gauss_prior: float = 0.1, 
                      beta: float = 1.0, device: str = 'cpu', dataset_type: str = 'synth',
                      l_max: float = 2.0, collect_output_products: bool = False, moving_average_outputs: bool = False,
-                     alpha: float = 0.1, eta: float = 0.1, eps: float = 1e-3):
+                     alpha: float = 0.1, eta: float = 0.1, eps: float = 1e-7):
     """
     Train the neural network with SGLD and bounded cross entropy loss.
     
@@ -240,7 +240,8 @@ def train_sgld_model(model, train_loader, test_loader,
         device = torch.device(device)
     
     model = model.to(device)
-    criterion = BoundedCrossEntropyLoss(ell_max=l_max)
+    criterion = SavageLoss()
+    # criterion = BoundedCrossEntropyLoss(ell_max=l_max)
     # criterion = TangentLoss()
     # criterion = BCEWithLogitsLoss()  # Use standard BCE for SGLD optimization
     zero_one_criterion = ZeroOneLoss()
@@ -310,7 +311,7 @@ def train_sgld_model(model, train_loader, test_loader,
                 zero_one_loss_total = 0.0
                 for batch_x, batch_y in train_loader:
                     outputs = model_cpu(batch_x)
-                    loss = criterion(outputs, batch_y)
+                    loss = criterion(outputs.squeeze(), batch_y)
                     if using_bce_for_optimization:
                         loss = transform_bce_to_unit_interval(loss, l_max)
                     train_loss_total += loss.item()
@@ -323,7 +324,7 @@ def train_sgld_model(model, train_loader, test_loader,
                 zero_one_loss_total = 0.0
                 for batch_x, batch_y in test_loader:
                     outputs = model_cpu(batch_x)
-                    loss = criterion(outputs, batch_y)
+                    loss = criterion(outputs.squeeze(), batch_y)
                     if using_bce_for_optimization:
                         loss = transform_bce_to_unit_interval(loss, l_max)
                     test_loss_total += loss.item()
@@ -342,7 +343,7 @@ def train_sgld_model(model, train_loader, test_loader,
             EMA_test_zero_one_losses.append(0.5 * EMA_alpha_BCE * test_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * test_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
             epoch += 1
 
-    while (EMA_train_losses[-1] < EMA_train_losses[-2] or epoch < 1000) and beta > 0.0:
+    while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch < 1000) and beta > 0.0:
         # Training phase
         model.train()
         train_loss_total = 0.0
@@ -370,7 +371,7 @@ def train_sgld_model(model, train_loader, test_loader,
             # Handle different output shapes for SYNTH vs MNIST
 
             if dataset_type == 'synth':
-                loss_for_optimization = criterion(outputs, batch_y)
+                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
                 if using_bce_for_optimization:
                     loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                 else:
@@ -378,7 +379,7 @@ def train_sgld_model(model, train_loader, test_loader,
                 predicted = (outputs.squeeze() > 0).float()
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
             else:
-                loss_for_optimization = criterion(outputs, batch_y)
+                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
                 if using_bce_for_optimization:
                     loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                 else:
@@ -435,7 +436,7 @@ def train_sgld_model(model, train_loader, test_loader,
                     epoch_test_products.extend(batch_products)
                 
                 if dataset_type == 'synth':
-                    loss_for_optimization = criterion(outputs, batch_y)
+                    loss_for_optimization = criterion(outputs.squeeze(), batch_y)
                     if using_bce_for_optimization:
                         loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                     else:
@@ -443,7 +444,7 @@ def train_sgld_model(model, train_loader, test_loader,
                     predicted = (outputs.squeeze() > 0).float()
                     zero_one_loss = zero_one_criterion(outputs, batch_y)
                 else:
-                    loss_for_optimization = criterion(outputs, batch_y)
+                    loss_for_optimization = criterion(outputs.squeeze(), batch_y)
                     if using_bce_for_optimization:
                         loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                     else:
@@ -478,7 +479,8 @@ def train_sgld_model(model, train_loader, test_loader,
                   f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
                   f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
                   f'LR: {current_lr:.2e} '
-                  f'Speed: {epochs_per_second:.1f} ep/s '
+                #   f'Speed: {epochs_per_second:.1f} ep/s '
+                  f'EMA Train BCE Loss: {EMA_train_BCE_losses[-1]:.4f} '
                   f'EMA Train Loss: {EMA_train_losses[-1]:.4f}'
                   )
             
