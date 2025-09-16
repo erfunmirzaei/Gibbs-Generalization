@@ -8,10 +8,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 class TangentLoss(nn.Module):
     """
     Tangent loss: phi(v) = (2 * arctan(v) - 1)^2
@@ -66,7 +62,7 @@ class SavageLoss(nn.Module):
             y = y * 2 - 1
 
         v = logits.flatten() * y
-        loss = torch.exp(-2 * torch.log(1 + torch.exp(-v)))
+        loss = F.sigmoid(-v).pow(2)
 
         if self.reduction == 'mean':
             return loss.mean()
