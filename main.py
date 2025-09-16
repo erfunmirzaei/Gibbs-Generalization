@@ -29,7 +29,7 @@ from training import run_beta_experiments
 # 4. CIFAR-10 binary classification
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  True
+TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = True
@@ -75,8 +75,8 @@ def main():
             num_repetitions = 1  # Full experiment
             # num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 40000, 4000: 40000, 8000: 40000, 16000: 40000}
             # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
-            # a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
@@ -97,18 +97,18 @@ def main():
         if USE_RANDOM_LABELS:
             train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
                 classes=MNIST_CLASSES,
-                n_train_per_group=4000,
+                n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=100,
+                batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
             train_loader, test_loader = get_mnist_binary_dataloaders(
                 classes=MNIST_CLASSES,
-                n_train_per_group=4000,
+                n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=100,
+                batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -134,8 +134,8 @@ def main():
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=2,  # 1 or 2 hidden layers for MNIST
-        width=1000,
+        n_hidden_layers=1,  # 1 or 2 hidden layers for MNIST
+        width=500,
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,

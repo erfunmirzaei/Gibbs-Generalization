@@ -171,8 +171,8 @@ def train_sgld_model(model, train_loader, test_loader, min_epochs,
         device = torch.device(device)
     
     model = model.to(device)
-    # criterion = SavageLoss()
-    criterion = BoundedCrossEntropyLoss(ell_max=l_max)
+    criterion = SavageLoss()
+    # criterion = BoundedCrossEntropyLoss(ell_max=l_max)
     # criterion = TangentLoss()
     # criterion = BCEWithLogitsLoss()  # Use standard BCE for SGLD optimization
     zero_one_criterion = ZeroOneLoss()
