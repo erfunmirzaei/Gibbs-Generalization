@@ -119,7 +119,7 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    csv_filename = "MCL2W1000SGLD8k.csv"
+    csv_filename = "checkpoint_mnist_random_beta500-64000_20250916_132048.csv"
 
     # Random label
     # csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"

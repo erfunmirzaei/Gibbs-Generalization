@@ -29,10 +29,10 @@ from training import run_beta_experiments
 # 4. CIFAR-10 binary classification
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  False
+TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = False
+USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
@@ -57,10 +57,10 @@ def main():
 
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [500]  # Minimal set for testing
+            beta_values = [64000]  # Minimal set for testing
             num_repetitions = 1  # Very fast testing
             # num_epochs = {0: 1, 1: 3000}  # Much fewer epochs
-            a0 = {0: 1e-10, 500.: 0.01}
+            a0 = {0: 1e-10, 64000.: 0.01}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
@@ -100,7 +100,7 @@ def main():
                 n_train_per_group=4000,
                 n_test_per_group=5000,
                 batch_size=100,
-                random_seed=42002,  # Fixed seed for consistent dataset
+                random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
@@ -109,7 +109,7 @@ def main():
                 n_train_per_group=4000,
                 n_test_per_group=5000,
                 batch_size=100,
-                random_seed=42002,  # Fixed seed for consistent dataset
+                random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
     else:
