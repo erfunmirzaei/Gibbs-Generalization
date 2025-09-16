@@ -4,9 +4,61 @@ import math
 import os
 import torch
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss
-from bounds import invert_kl, ln, kl
 from training import transform_bce_to_unit_interval
 import numpy as np
+
+
+def ln(x):
+    """Natural logarithm function."""
+    return math.log(x)
+
+
+def kl(p, q, eps=1e-10):
+    """
+    Compute KL divergence between two Bernoulli distributions.
+    
+    Args:
+        p: First probability
+        q: Second probability
+        eps: Small epsilon to prevent numerical issues with zero values
+    
+    Returns:
+        KL divergence KL(p||q)
+    """
+    # Add epsilon to prevent log(0) and division by 0
+    q = max(min(q, 1.0 - eps), eps)  # Clamp q to [eps, 1-eps]
+
+    if p == 0:
+        return ln(1/(1-q))
+    if p == 1:
+        return ln(1/q)
+
+    y = p * ln(p / q) + (1 - p) * ln((1 - p) / (1 - q))
+    return y
+
+
+def invert_kl(p, kl_val, eps=1e-10):
+    """
+    Invert KL divergence to find q such that KL(p||q) = kl_val.
+    
+    Args:
+        p: First probability (fixed)
+        kl_val: Target KL divergence value
+        eps: Small epsilon to prevent numerical issues with zero values
+    
+    Returns:
+        q such that KL(p||q) = kl_val
+    """
+    
+    l, u, r = p, 1, 1
+    while ((u - l) > 1 / 100000):
+        if kl(p, r, eps) < kl_val:
+            l = r
+            r = (r + u) / 2
+        else:
+            u = r
+            r = (r + l) / 2
+    return r
 
 
 def read_csv_2_lists(csv_file_path):
@@ -67,19 +119,7 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    csv_filename = "checkpoint_mnist_random_beta250-16000_20250912_163239.csv"
-    #"checkpoint_mnist_beta250-16000_20250912_192105.csv"
-    #"checkpoint_mnist_beta250-16000_20250911_113247.csv"
-    #"checkpoint_mnist_random_beta250-16000_20250911_034846.csv"
-    #"checkpoint_mnist_beta250-16000_20250910_233202.csv"
-    #"checkpoint_mnist_random_beta250-16000_20250910_211119.csv"
-    #"checkpoint_mnist_random_beta250-4000_20250910_170038.csv" 
-    #"checkpoint_mnist_random_beta250-4000_20250910_151654.csv"
-    #"checkpoint_mnist_random_beta250-4000_20250910_140918.csv"
-    #"checkpoint_mnist_random_beta250-4000_20250910_105653.csv"
-    #"checkpoint_mnist_random_beta250-4000_20250909_231851.csv"
-    #"checkpoint_mnist_random_beta250-4000_20250909_172655.csv" 
-    #"checkpoint_mnist_random_beta250-4000_20250909_163533.csv"
+    csv_filename = "MCL2W1000SGLD8k.csv"
 
     # Random label
     # csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"
@@ -210,7 +250,12 @@ if __name__ == "__main__":
     ax2.set_xscale('log')
     plt.tight_layout()
     
-    csv_filename = csv_filename.replace('.csv', '_plot.png')
+    # Create CSV directory if it doesn't exist
+    os.makedirs('plots', exist_ok=True)
+    
+    # Save training data
+    csv_filename = f"plots/{csv_filename}_plot.png"
+
     # Save the figure
     plt.savefig(csv_filename, dpi=300, bbox_inches='tight')
     print(f"Plot saved as '{csv_filename}'")

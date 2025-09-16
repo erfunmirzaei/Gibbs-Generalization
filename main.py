@@ -9,21 +9,30 @@ This script orchestrates the complete SGLD experiment, testing different beta va
 and computing PAC-Bayesian generalization bounds for the SYNTH dataset.
 """
 
-import torch
-import numpy as np
-import time
 from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels, get_synth_dataloaders_random_labels,
                     create_mnist_binary_dataset, get_mnist_binary_dataloaders,
                     create_mnist_binary_dataset_random_labels, get_mnist_binary_dataloaders_random_labels)
 from training import run_beta_experiments
-from bounds import compute_generalization_bound, compute_generalization_errors, save_results_to_file
-from plot_utils import plot_beta_results
+
+# Questions: 
+# 1. Bounded loss function: Could relax it by decreasing the prior variance (sigma). what is the role of prior.
+# 2. Why for SGLD we don't see the shift anymore? At least not as strong as ULA.
+# 3. For deeper networks, the plot looks different - why? We are visiting a phase transition?
+#  finally, the bounds are working without any calibration. I guess this is excellent news for the paper, and also, it is very interesting to think about why making the neural net deeper and more overparametrized has such an effect.
+# 4. What is the the role of stopping criterion to be close or far from the optimum?
+# TODO: Future: 
+# 0. 1 hidden layer with 1000 units for MNIST
+# 1. Savage loss, ULA/SGLD?, 1L/2L?, n=2k/8k?
+
+# 2. Burn-in phase with larger lr and then SGLD with smaller learning rate 
+# 3. SGLD with scheduler
+# 4. CIFAR-10 binary classification
 
 # Test mode flag - set to False for full experiment
 TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = True
+USE_RANDOM_LABELS = False
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
 DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
@@ -48,10 +57,10 @@ def main():
 
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [16000]  # Minimal set for testing
+            beta_values = [500]  # Minimal set for testing
             num_repetitions = 1  # Very fast testing
             # num_epochs = {0: 1, 1: 3000}  # Much fewer epochs
-            a0 = {0: 1e-10, 16000: 0.01}
+            a0 = {0: 1e-10, 500.: 0.01}
         else:
             # SYNTH dataset configuration - FAST TEST MODE
             beta_values = [1, 10]  # Minimal set for testing  
@@ -61,13 +70,13 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
-            # beta_values = [1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
+            beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment
             num_repetitions = 1  # Full experiment
             # num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 40000, 4000: 40000, 8000: 40000, 16000: 40000}
             # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
-            a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            # a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         else:
             beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
@@ -76,7 +85,7 @@ def main():
             a0 = {0: 1e-7, 1: 1e-7, 10: 1e-1, 30: 1e-1, 50: 1e-1, 70: 1e-1, 100: 1e-1, 200: 1e-1}
     
     print(f"\n{'='*70}")
-    print(f"SGLD BETA EXPERIMENTS")
+    print(f"Gibbs Generalization EXPERIMENTS")
     print(f"Dataset: {DATASET_TYPE.upper()}")
     print(f"Beta values: {beta_values}")
     print(f"Repetitions per beta: {num_repetitions}")
@@ -88,19 +97,19 @@ def main():
         if USE_RANDOM_LABELS:
             train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
                 classes=MNIST_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=1000,
-                batch_size=2000,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                n_train_per_group=4000,
+                n_test_per_group=5000,
+                batch_size=100,
+                random_seed=42002,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
             train_loader, test_loader = get_mnist_binary_dataloaders(
                 classes=MNIST_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=1000,
-                batch_size=2000,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                n_train_per_group=4000,
+                n_test_per_group=5000,
+                batch_size=100,
+                random_seed=42002,  # Fixed seed for consistent dataset
                 normalize=True
             )
     else:
@@ -119,121 +128,25 @@ def main():
 
     
     # Run the experiment with optimizations
-    results = run_beta_experiments(
+    run_beta_experiments(
         beta_values=beta_values,
-        num_repetitions=num_repetitions,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
+        n_hidden_layers=2,  # 1 or 2 hidden layers for MNIST
+        width=1000,
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
-        mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None,
-        train_loader=train_loader,  # Pass the pre-created dataloaders
+        train_loader=train_loader, 
         test_loader=test_loader,
-        save_output_products_csv=False, 
-        moving_average_outputs=True,
-        alpha=0.00025, eta=0.1, eps=1e-7
-    )
-    
-    # Get training set size for bounds computation
-    n_train = len(train_loader.dataset)
-    
-
-    # Create comprehensive hyperparameter dictionary
-    from results_manager import create_hyperparameter_dict, save_or_merge_results
-    
-    hyperparams = create_hyperparameter_dict(
-        beta_values=beta_values,
-        num_repetitions=num_repetitions,
-        a0=a0,
-        b=0.55,
-        sigma_gauss_prior=1000,
-        device=device,
-        dataset_type=DATASET_TYPE,
-        use_random_labels=USE_RANDOM_LABELS,
-        l_max=4.0,
-        mnist_classes=MNIST_CLASSES if DATASET_TYPE == 'mnist' else None,
-        train_dataset_size=len(train_loader.dataset),
-        test_dataset_size=len(test_loader.dataset),
-        batch_size=train_loader.batch_size,
-        random_seed=42000,  # The seed used for dataset creation
-        alpha=0.1,
-        eta=0.1,
-        eps=1e-6,
-        normalize=True
-    )
-    
-    # Save results with hyperparameter tracking and potential merging
-    print(f"\n{'='*70}")
-    print("SAVING RESULTS WITH HYPERPARAMETER TRACKING")
-    print(f"{'='*70}")
-    
-    results_filename, was_merged = save_or_merge_results(results, hyperparams)
-    
-    if was_merged:
-        print("✅ Results merged with existing data!")
-        print("The saved file now contains results from multiple experiment runs.")
-        
-        # Load the merged results for plotting
-        from results_manager import load_existing_results
-        _, merged_results = load_existing_results(results_filename)
-        plot_results = merged_results
-    else:
-        print("💾 New results file created.")
-        plot_results = results
-    
-    # Plot the results (now with potentially merged data)
-    experiment_params = {
-        'beta_values': beta_values,
-        'num_repetitions': num_repetitions,
-        'a0': a0,
-        'sigma_gauss_prior': 1000,
-        'dataset_type': DATASET_TYPE,
-        'use_random_labels': USE_RANDOM_LABELS,
-        'hyperparams': hyperparams,
-
-    }
-    
-    # plot_beta_results(plot_results, n_train, **experiment_params)
-    
-    # Also save in the old format for backward compatibility
-    print("\n📄 Also saving in legacy format for backward compatibility...")
-    # save_results_to_file(plot_results, n_train, **experiment_params)
-    
-    # Get the generated filenames for display
-    from bounds import generate_filename
-    legacy_results_filename = generate_filename(
-        file_type='results', extension='txt', 
-        **experiment_params
-    )
-    plot_filename = generate_filename(
-        file_type='plot', extension='png', 
-        **experiment_params
+        min_epochs = 4000,
+        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7
     )
     
     print(f"\n{'='*70}")
     print("EXPERIMENT COMPLETED!")
-    print(f"Files generated:")
-    print(f"  - {results_filename} (enhanced results with hyperparameter tracking)")
-    print(f"  - results/{legacy_results_filename} (legacy format)")
-    print(f"  - results/{plot_filename} (plots)")
-    
-    if was_merged:
-        print(f"\n🔄 RESULTS MERGED:")
-        print(f"  Your new results have been combined with existing results")
-        print(f"  that had identical hyperparameters.")
-        print(f"  The plots now show data from multiple experiment runs.")
-    
-    print(f"\n💡 HYPERPARAMETER TRACKING:")
-    print(f"  Future experiments with identical hyperparameters will be")
-    print(f"  automatically merged with these results.")
-    
-    from results_manager import generate_hyperparameter_hash
-    print(f"  Hyperparameter hash: {generate_hyperparameter_hash(hyperparams)}")
 
 if __name__ == "__main__":
-    
-    # Run main experiment
     main()

@@ -66,13 +66,15 @@ class SavageLoss(nn.Module):
             y = y * 2 - 1
 
         v = logits.flatten() * y
-        loss = 1 / (1 + torch.exp(v)).pow(2)
+        loss = torch.exp(-2 * torch.log(1 + torch.exp(-v)))
 
         if self.reduction == 'mean':
             return loss.mean()
         elif self.reduction == 'sum':
             return loss.sum()
         return loss
+    
+    
 class BoundedCrossEntropyLoss(nn.Module):
     def __init__(self, ell_max=4.0):
         super(BoundedCrossEntropyLoss, self).__init__()
@@ -84,16 +86,14 @@ class BoundedCrossEntropyLoss(nn.Module):
         logits: Tensor of shape (batch_size, num_classes) or (batch_size, 1) for binary
         target: Tensor of shape (batch_size,) with integer class labels
         """
-        if logits.shape[-1] == 1:
-            # Binary classification with single output
-            # Convert single logit to two-class probabilities
+        if len(logits.shape) > 1 and logits.shape[-1] > 1:
+            # Multi-class case: Convert logits to probabilities using softmax
+            probs = F.softmax(logits, dim=1)
+        else:
+            # Binary classification with single output: Convert single logit to two-class probabilities
             p_pos = torch.sigmoid(logits.squeeze(-1))
             p_neg = 1 - p_pos
             probs = torch.stack([p_neg, p_pos], dim=1)
-        else:
-            # Multi-class case
-            # Convert logits to probabilities using softmax
-            probs = F.softmax(logits, dim=1)
 
         # Apply psi(p) transformation
         psi_probs = self.e_neg_ell_max + (1 - 2 * self.e_neg_ell_max) * probs
@@ -104,8 +104,8 @@ class BoundedCrossEntropyLoss(nn.Module):
         # Compute bounded cross entropy: -log(psi(p_y))
         loss = -torch.log(psi_p_y)
 
-        # Ensure numerical stability
-        loss = torch.clamp(loss, min=0.0, max=self.ell_max)
+        # # Ensure numerical stability
+        # loss = torch.clamp(loss, min=0.0, max=self.ell_max)
 
         return loss.mean()
 
