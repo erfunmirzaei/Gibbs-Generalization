@@ -119,7 +119,7 @@ def main():
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
     # # True label
-    csv_filename = "checkpoint_mnist_random_beta500-64000_20250916_132048.csv"
+    csv_filename = "MCL2W1000SGLD8kLR001BBCE.csv"
 
     # Random label
     # csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"
@@ -254,6 +254,8 @@ if __name__ == "__main__":
     os.makedirs('plots', exist_ok=True)
     
     # Save training data
+    if csv_filename.endswith('.csv'):
+        csv_filename = csv_filename[:-4]
     csv_filename = f"plots/{csv_filename}_plot.png"
 
     # Save the figure

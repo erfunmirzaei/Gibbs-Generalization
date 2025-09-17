@@ -88,7 +88,7 @@ Desktop.ini
 *.log
 
 # Model checkpoints
-checkpoints/
+plots/
 *.pth
 *.ckpt
 *.h5

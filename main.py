@@ -9,9 +9,9 @@ This script orchestrates the complete SGLD experiment, testing different beta va
 and computing PAC-Bayesian generalization bounds for the SYNTH dataset.
 """
 
-from dataset import (create_synth_dataset, get_synth_dataloaders, create_synth_dataset_random_labels, get_synth_dataloaders_random_labels,
-                    create_mnist_binary_dataset, get_mnist_binary_dataloaders,
-                    create_mnist_binary_dataset_random_labels, get_mnist_binary_dataloaders_random_labels)
+from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
+                    get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels,
+                    get_cifar10_binary_dataloaders, get_cifar10_binary_dataloaders_random_labels)
 from training import run_beta_experiments
 
 # Questions: 
@@ -22,26 +22,32 @@ from training import run_beta_experiments
 # 4. What is the the role of stopping criterion to be close or far from the optimum?
 # TODO: Future: 
 # 0. 1 hidden layer with 1000 units for MNIST
-# 1. Savage loss, ULA/SGLD?, 1L/2L?, n=2k/8k?
+# 1. Savage loss, ULA/SGLD?, 1L/2L?, n=2k/8k? 
 
 # 2. Burn-in phase with larger lr and then SGLD with smaller learning rate 
 # 3. SGLD with scheduler
 # 4. CIFAR-10 binary classification
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  False
+TEST_MODE =  True
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = True
 
-# Dataset selection - set to 'mnist' for MNIST binary classification or 'synth' for synthetic
-DATASET_TYPE = 'mnist'  # 'synth' or 'mnist'
+# Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
+DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
 # - Individual classes: [0, 1] 
 # - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
 MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
+
+# CIFAR-10 classes for binary classification (only used when DATASET_TYPE='cifar10')
+# Can be either:
+# - Individual classes: [0, 1] for airplane vs automobile
+# - Grouped classes: [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]] for vehicles vs animals
+CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 
 def main():
     """Main experiment function."""
@@ -57,38 +63,33 @@ def main():
 
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [64000]  # Minimal set for testing
-            num_repetitions = 1  # Very fast testing
-            # num_epochs = {0: 1, 1: 3000}  # Much fewer epochs
-            a0 = {0: 1e-10, 64000.: 0.01}
-        else:
-            # SYNTH dataset configuration - FAST TEST MODE
-            beta_values = [1, 10]  # Minimal set for testing  
-            num_repetitions = 2  # Very fast testing
-            num_epochs = {0: 10, 1: 20, 10: 50}  # Much fewer epochs
-            a0 = {0: 0.01, 1: 0.01, 10: 0.1}
+            beta_values = [16000]  # Minimal set for testing
+            a0 = {0: 1e-10, 16000: 0.01}
+        
+        elif DATASET_TYPE == 'cifar10':
+            # CIFAR-10 needs fewer epochs typically - FAST TEST MODE
+            beta_values = [16000]  # Minimal set for testing
+            a0 = {0: 1e-10, 16000: 0.01}
         
     else:
         if DATASET_TYPE == 'mnist':
-            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000]  # Full MNIST experiment
-            beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment
-            num_repetitions = 1  # Full experiment
-            # num_epochs = {0: 1, 1:10000, 250: 10000, 500: 10000, 1000: 10000, 2000: 40000, 4000: 40000, 8000: 40000, 16000: 40000}
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
+            # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
             a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
-        else:
-            beta_values = [0, 1, 10, 30, 50, 70, 100, 200]  # Full SYNTH experiment
-            num_repetitions = 30  # Full experiment
-            num_epochs = {0: 1, 1: 100, 10: 5000, 30: 10000, 50: 15000, 70: 20000, 100: 30000, 200: 30000}
-            a0 = {0: 1e-7, 1: 1e-7, 10: 1e-1, 30: 1e-1, 50: 1e-1, 70: 1e-1, 100: 1e-1, 200: 1e-1}
+        elif DATASET_TYPE == 'cifar10':
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
+            a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+
     
     print(f"\n{'='*70}")
     print(f"Gibbs Generalization EXPERIMENTS")
     print(f"Dataset: {DATASET_TYPE.upper()}")
     print(f"Beta values: {beta_values}")
-    print(f"Repetitions per beta: {num_repetitions}")
     print(f"{'='*70}")
 
     # Create dataloaders once (same dataset for all repetitions and beta values)
@@ -99,8 +100,8 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=2000,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                batch_size=50,
+                random_seed=42004,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
@@ -108,34 +109,42 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=2000,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                batch_size=50,
+                random_seed=42004,  # Fixed seed for consistent dataset
                 normalize=True
             )
-    else:
+    elif DATASET_TYPE == 'cifar10':
         if USE_RANDOM_LABELS:
-            train_loader, test_loader = get_synth_dataloaders_random_labels(
-                batch_size=10,
-                random_seed=42  # Fixed seed for consistent dataset
+            train_loader, test_loader = get_cifar10_binary_dataloaders_random_labels(
+                classes=CIFAR10_CLASSES,
+                n_train_per_group=1000,
+                n_test_per_group=5000,
+                batch_size=50,
+                random_seed=42001,  # Fixed seed for consistent dataset
             )
         else:
-            train_loader, test_loader = get_synth_dataloaders(
-                batch_size=10,
-                random_seed=42  # Fixed seed for consistent dataset
+            train_loader, test_loader = get_cifar10_binary_dataloaders(
+                classes=CIFAR10_CLASSES,
+                n_train_per_group=1000,
+                n_test_per_group=5000,
+                batch_size=50,
+                random_seed=42001,  # Fixed seed for consistent dataset
             )
+
     
     print(f"Dataset created with fixed random seed (42001) for consistency across all experiments")
 
     
     # Run the experiment with optimizations
     run_beta_experiments(
+        loss = 'BBCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=1,  # 1 or 2 hidden layers for MNIST
-        width=500,
+        n_hidden_layers=2,  # 1 or 2 hidden layers for MNIST
+        width=1000,
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,

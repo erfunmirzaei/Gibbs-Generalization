@@ -15,7 +15,7 @@ import csv
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
-from models import SynthNN, MNISTNN1L, initialize_nn_weights_gaussian, MNISTNN2L
+from models import  initialize_nn_weights_gaussian, FCN1L,FCN2L
 from sgld import SGLD
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
@@ -132,7 +132,7 @@ def get_a0_for_beta(beta, a0):
     else:
         raise ValueError(f"a0 must be int, float, dict, or callable, got {type(a0)}")
 
-def train_sgld_model(model, train_loader, test_loader, min_epochs, 
+def train_sgld_model(loss, model, train_loader, test_loader, min_epochs, 
                      a0, b, sigma_gauss_prior, 
                      beta, device, dataset_type,
                      l_max, alpha_average, alpha_stop,  eta, eps):
@@ -144,6 +144,7 @@ def train_sgld_model(model, train_loader, test_loader, min_epochs,
     For beta=0, samples from the prior distribution instead of training.
     
     Args:
+        loss (str): Loss function name ('bce', 'tangent', or 'savage').
         model (nn.Module): Neural network model to train.
         train_loader (DataLoader): Training data loader.
         test_loader (DataLoader): Test data loader.
@@ -171,10 +172,15 @@ def train_sgld_model(model, train_loader, test_loader, min_epochs,
         device = torch.device(device)
     
     model = model.to(device)
-    criterion = SavageLoss()
-    # criterion = BoundedCrossEntropyLoss(ell_max=l_max)
-    # criterion = TangentLoss()
-    # criterion = BCEWithLogitsLoss()  # Use standard BCE for SGLD optimization
+    # Define loss function
+    if loss.lower() == 'bbce':
+        criterion = BoundedCrossEntropyLoss(ell_max=l_max)
+    elif loss.lower() == 'tangent':
+        criterion = TangentLoss()
+    elif loss.lower() == 'savage':
+        criterion = SavageLoss()
+    else:
+        criterion = BCEWithLogitsLoss()  # Use standard BCE for SGLD optimization
     zero_one_criterion = ZeroOneLoss()
 
     # Check if we're using BCE for optimization (to determine if transformation is needed)
@@ -421,7 +427,7 @@ def train_sgld_model(model, train_loader, test_loader, min_epochs,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
             EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses)
 
-def run_beta_experiments(beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
+def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_epochs,
                          alpha_average, alpha_stop, eta, eps, save_every=1):
     """
@@ -432,6 +438,7 @@ def run_beta_experiments(beta_values, a0, b, sigma_gauss_prior, device,n_hidden_
     not present. Saves results to CSV files with experimental metadata.
     
     Args:
+        loss (str): Loss function name ('bce', 'tangent', or 'savage').
         beta_values (list): List of beta (inverse temperature) values to experiment with.
         a0 (float, dict, or callable): Initial learning rate specification.
         b (float): Learning rate decay exponent.
@@ -499,15 +506,19 @@ def run_beta_experiments(beta_values, a0, b, sigma_gauss_prior, device,n_hidden_
         # Create fresh model for each beta-repetition combination
         if dataset_type == 'mnist':
             if n_hidden_layers == 1:
-                model = MNISTNN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
+                model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
             else:
-                model = MNISTNN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
+                model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
 
-        else:
-            model = SynthNN(input_dim=4, hidden_dim=500)
-        
+        elif dataset_type == 'cifar10':
+            if n_hidden_layers == 1:
+                model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+            else:
+                model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+
         # Train the model
         training_results = train_sgld_model(
+            loss =loss,
             model=model,
             train_loader=train_loader,
             test_loader=test_loader,
@@ -557,7 +568,6 @@ def run_beta_experiments(beta_values, a0, b, sigma_gauss_prior, device,n_hidden_
             filename_prefix += "R"
         else:
             filename_prefix += "C"
-
         
         filename_prefix += f"L{n_hidden_layers}"
         filename_prefix += f"W{width}"
@@ -567,10 +577,12 @@ def run_beta_experiments(beta_values, a0, b, sigma_gauss_prior, device,n_hidden_
             filename_prefix += f"SGLD"
         
         filename_prefix += f"{len(train_loader.dataset)/1000:.0f}k"
-
+        filename_prefix += f"LR{current_a0}".replace('.', '')
+        filename_prefix += f"{loss.upper()}"
         
         summary_string =  f"The LMC has been run with the following parameters:\n" \
         f"  - Device: {device}\n" \
+        f"  - Loss function: {loss}\n" \
         f"  - l_max: {l_max}\n" \
         f"  - Network architecture: {model.__class__.__name__}\n" \
         f"  - Number of hidden layers: {n_hidden_layers}\n" \
