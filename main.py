@@ -29,13 +29,13 @@ from training import run_beta_experiments
 # 4. CIFAR-10 binary classification
 
 # Test mode flag - set to False for full experiment
-TEST_MODE =  True
+TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
 USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
-DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
+DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -120,7 +120,7 @@ def main():
                 classes=CIFAR10_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=50,
+                batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
             )
         else:
@@ -128,7 +128,7 @@ def main():
                 classes=CIFAR10_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=50,
+                batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
             )
 
@@ -144,9 +144,9 @@ def main():
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=1,  # 1 or 2 hidden layers for MNIST
-        width=500,
-        dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
+        n_hidden_layers=2,  # 1 or 2 hidden layers
+        width=1000,
+        dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
         train_loader=train_loader, 

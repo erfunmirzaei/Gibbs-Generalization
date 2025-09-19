@@ -218,7 +218,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     EMA_test_BCE_losses = [0.0, 1.0]
     EMA_train_zero_one_losses = [0.0, 1.0]
     EMA_test_zero_one_losses = [0.0, 1.0]
-    EMA_grad_norm = [0.0, 0.0]  # EMA for gradient norm if needed
+    # EMA_grad_norm = [0.0, 0.0]  # EMA for gradient norm if needed
     EMA_alpha_BCE = alpha_average
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
@@ -307,8 +307,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             optimizer.step()
             
             # Record the loss (transformed if BCE was used for optimization, raw otherwise)
-            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item()
-            EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
+            # grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item()
+            # EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
             bce_val = loss_for_recording.item()
             zeroOne_val = zero_one_loss.item()
             train_loss_total += bce_val
@@ -384,9 +384,9 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                   f'EMA diff: {EMA_train_losses[-1] - EMA_train_losses[-2]:.6f} '
                   f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
                   f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
-                #   f'LR: {current_lr:.2e} '
+                  f'LR: {current_lr:.2e} '
                 #   f'Speed: {epochs_per_second:.1f} ep/s '
-                  f'Norm of gradient: {EMA_grad_norm[-1]:.4f} '
+                #   f'Norm of gradient: {EMA_grad_norm[-1]:.4f} '
                   f'EMA Train BCE Loss: {EMA_train_BCE_losses[-1]:.4f} '
                   f'EMA Train Loss: {EMA_train_losses[-1]:.4f}'
                   )
@@ -403,7 +403,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
 
     return (train_losses, test_losses, train_accuracies, test_accuracies,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
-            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm)
+            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses)
 
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_epochs,
