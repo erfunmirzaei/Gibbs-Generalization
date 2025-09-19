@@ -517,7 +517,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         
 
         (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
-                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm) = training_results
+                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses) = training_results
 
         list_train_BCE_losses.append(train_losses[-50])
         list_test_BCE_losses.append(test_losses[-50])
@@ -527,7 +527,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
         list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
         list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
-        list_EMA_grad_norm.append(EMA_grad_norm[-1])
+        # list_EMA_grad_norm.append(EMA_grad_norm[-1])
 
         print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                 f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
@@ -583,7 +583,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f" -  alpha_stop: {alpha_stop}\n" \
         f" -  eta: {eta}\n" \
         f" -  eps: {eps}\n"\
-        f" - Gradient norm: {list_EMA_grad_norm}\n"
+        # f" - Gradient norm: {list_EMA_grad_norm}\n"
 
         csv_path = save_moving_average_losses_to_csv(
             list_train_BCE_losses,

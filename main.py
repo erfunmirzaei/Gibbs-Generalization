@@ -32,7 +32,7 @@ from training import run_beta_experiments
 TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = True
+USE_RANDOM_LABELS = False
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
 DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
