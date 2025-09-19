@@ -118,11 +118,7 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
     # TODO: THESE NAMES SHOULD BE CHANGED WITH THE TRUE NAMES OF THE FILES
-    # # True label
-    csv_filename = "MCL2W1000SGLD8kLR001BBCE.csv"
-
-    # Random label
-    # csv_filename = "experiment_mnist_random_beta250-16000_rep10_20250821_054118_test_output_label_products_20250821_054118.csv"
+    csv_filename = "SCL2W1000SGLD2kLR0005BBCE.csv"
 
     # TODO: HERE I AM ASSUMED THAT CSV FILES ARE SAVED IN A SUBDIRECTORY NAMED 'csv_outputs' BUT IF IT IS NOT THE CASE THAT EXTRA ARGUMENT COULD EASILY BE OMITTED
     csv_path = os.path.join(script_dir, "csv_EMA", csv_filename)

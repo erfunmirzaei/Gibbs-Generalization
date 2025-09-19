@@ -35,7 +35,7 @@ TEST_MODE =  True
 USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
-DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
+DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -63,8 +63,8 @@ def main():
 
         if DATASET_TYPE == 'mnist':
             # MNIST needs fewer epochs typically - FAST TEST MODE
-            beta_values = [16000]  # Minimal set for testing
-            a0 = {0: 1e-10, 16000: 0.01}
+            beta_values = [2000]  # Minimal set for testing
+            a0 = {0: 0.01, 2000: 0.01}
         
         elif DATASET_TYPE == 'cifar10':
             # CIFAR-10 needs fewer epochs typically - FAST TEST MODE
@@ -76,7 +76,8 @@ def main():
             beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
             # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
-            a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
             # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
@@ -100,8 +101,8 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=50,
-                random_seed=42004,  # Fixed seed for consistent dataset
+                batch_size=2000,
+                random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
@@ -109,8 +110,8 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=50,
-                random_seed=42004,  # Fixed seed for consistent dataset
+                batch_size=2000,
+                random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
     elif DATASET_TYPE == 'cifar10':
@@ -137,21 +138,21 @@ def main():
     
     # Run the experiment with optimizations
     run_beta_experiments(
-        loss = 'BBCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
+        loss = 'Savage', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=2,  # 1 or 2 hidden layers for MNIST
-        width=1000,
+        n_hidden_layers=1,  # 1 or 2 hidden layers for MNIST
+        width=500,
         dataset_type=DATASET_TYPE,  # 'synth' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
         train_loader=train_loader, 
         test_loader=test_loader,
         min_epochs = 4000,
-        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7
+        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7,test_mode = TEST_MODE
     )
     
     print(f"\n{'='*70}")

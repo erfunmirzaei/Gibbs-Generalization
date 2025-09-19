@@ -218,6 +218,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     EMA_test_BCE_losses = [0.0, 1.0]
     EMA_train_zero_one_losses = [0.0, 1.0]
     EMA_test_zero_one_losses = [0.0, 1.0]
+    EMA_grad_norm = [0.0, 0.0]  # EMA for gradient norm if needed
     EMA_alpha_BCE = alpha_average
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
@@ -241,39 +242,39 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             with torch.no_grad():
                 train_loss_total = 0.0
                 zero_one_loss_total = 0.0
-                for batch_x, batch_y in train_loader:
-                    outputs = model_cpu(batch_x)
-                    loss = criterion(outputs.squeeze(), batch_y)
-                    if using_bce_for_optimization:
-                        loss = transform_bce_to_unit_interval(loss, l_max)
-                    train_loss_total += loss.item()
-                    zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
-                train_zero_one_losses.append(zero_one_loss_total / len(train_loader))
-                train_losses.append(train_loss_total / len(train_loader))
+                batch_x, batch_y = next(iter(train_loader))
+                outputs = model_cpu(batch_x)
+                loss = criterion(outputs.squeeze(), batch_y)
+                if using_bce_for_optimization:
+                    loss = transform_bce_to_unit_interval(loss, l_max)
+                train_loss_total += loss.item()
+                zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
+                train_zero_one_losses.append(zero_one_loss_total )
+                train_losses.append(train_loss_total)
 
                 # Compute test loss
                 test_loss_total = 0.0
                 zero_one_loss_total = 0.0
-                for batch_x, batch_y in test_loader:
-                    outputs = model_cpu(batch_x)
-                    loss = criterion(outputs.squeeze(), batch_y)
-                    if using_bce_for_optimization:
-                        loss = transform_bce_to_unit_interval(loss, l_max)
-                    test_loss_total += loss.item()
-                    zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
-                test_losses.append(test_loss_total / len(test_loader))
-                test_zero_one_losses.append(zero_one_loss_total / len(test_loader))
+                batch_x, batch_y = next(iter(test_loader))
+                outputs = model_cpu(batch_x)
+                loss = criterion(outputs.squeeze(), batch_y)
+                if using_bce_for_optimization:
+                    loss = transform_bce_to_unit_interval(loss, l_max)
+                test_loss_total += loss.item()
+                zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
+                test_losses.append(test_loss_total)
+                test_zero_one_losses.append(zero_one_loss_total)
 
+            EMA_train_BCE_losses.append(EMA_alpha_BCE * train_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+            EMA_train_zero_one_losses.append(EMA_alpha_BCE * train_zero_one_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+            EMA_test_BCE_losses.append(EMA_alpha_BCE * test_losses[-1]  + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+            EMA_test_zero_one_losses.append(EMA_alpha_BCE * test_zero_one_losses[-1] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+            epoch += 1
             print(f'Beta=0.0: Averaged over {num_prior_samples} prior samples - '
                 f'Train Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, '
                 f'EMA Train Loss: {EMA_train_BCE_losses[-1]:.4f}, EMA Test Loss: {EMA_test_BCE_losses[-1]:.4f}, '
                 f'EMA Train Zero-One Loss: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test Zero-One Loss: {EMA_test_zero_one_losses[-1]:.4f}'
                 )
-            EMA_train_BCE_losses.append(0.5 * EMA_alpha_BCE * train_losses[-1] + 0.5 * EMA_alpha_BCE * train_losses[-2] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
-            EMA_test_BCE_losses.append(0.5 * EMA_alpha_BCE * test_losses[-1] + 0.5 * EMA_alpha_BCE * test_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
-            EMA_train_zero_one_losses.append(0.5 * EMA_alpha_BCE * train_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * train_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
-            EMA_test_zero_one_losses.append(0.5 * EMA_alpha_BCE * test_zero_one_losses[-1] + 0.5 * EMA_alpha_BCE * test_zero_one_losses[-2] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
-            epoch += 1
 
     while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_epochs / len(train_loader)) and beta > 0.0:
         # Training phase
@@ -294,33 +295,24 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             # Standard precision training
             outputs = model(batch_x)
              
-            # Handle different output shapes for SYNTH vs MNIST
-
-            if dataset_type == 'synth':
-                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-                if using_bce_for_optimization:
-                    loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
-                else:
-                    loss_for_recording = loss_for_optimization
-                predicted = (outputs.squeeze() > 0).float()
-                zero_one_loss = zero_one_criterion(outputs, batch_y)
+            loss_for_optimization = criterion(outputs.squeeze(), batch_y)
+            if using_bce_for_optimization:
+                loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
             else:
-                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-                if using_bce_for_optimization:
-                    loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
-                else:
-                    loss_for_recording = loss_for_optimization
-                predicted = (outputs.squeeze() > 0).float()
-                zero_one_loss = zero_one_criterion(outputs, batch_y)
+                loss_for_recording = loss_for_optimization
+            predicted = (outputs.squeeze() > 0).float()
+            zero_one_loss = zero_one_criterion(outputs, batch_y)
             
             loss_for_optimization.backward()
             optimizer.step()
             
             # Record the loss (transformed if BCE was used for optimization, raw otherwise)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item()
+            EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
             bce_val = loss_for_recording.item()
             zeroOne_val = zero_one_loss.item()
-            train_loss_total += loss_for_recording.item()
-            train_zero_one_total += zero_one_loss.item()
+            train_loss_total += bce_val
+            train_zero_one_total += zeroOne_val
             train_total += batch_y.size(0)
             train_correct += (predicted == batch_y).sum().item()
             EMA_train_BCE_losses.append(EMA_alpha_BCE *  bce_val  + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
@@ -353,29 +345,20 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                 
                 outputs = model(batch_x)
                 
-                if dataset_type == 'synth':
-                    loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-                    if using_bce_for_optimization:
-                        loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
-                    else:
-                        loss_for_recording = loss_for_optimization
-                    predicted = (outputs.squeeze() > 0).float()
-                    zero_one_loss = zero_one_criterion(outputs, batch_y)
+                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
+                # if math.isnan(loss_for_optimization.item()):
+                #     raise ValueError("Loss is NaN")
+                if using_bce_for_optimization:
+                    loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                 else:
-                    loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-                    # if math.isnan(loss_for_optimization.item()):
-                    #     raise ValueError("Loss is NaN")
-                    if using_bce_for_optimization:
-                        loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
-                    else:
-                        loss_for_recording = loss_for_optimization
-                    predicted = (outputs.squeeze() > 0).float()
-                    zero_one_loss = zero_one_criterion(outputs, batch_y)
+                    loss_for_recording = loss_for_optimization
+                predicted = (outputs.squeeze() > 0).float()
+                zero_one_loss = zero_one_criterion(outputs, batch_y)
                 
                 bce_val = loss_for_recording.item()
                 zeroOne_val = zero_one_loss.item()
-                test_loss_total += loss_for_recording.item()
-                test_zero_one_total += zero_one_loss.item()
+                test_loss_total += bce_val
+                test_zero_one_total += zeroOne_val
                 test_total += batch_y.size(0)
                 test_correct += (predicted == batch_y).sum().item()
 
@@ -388,12 +371,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
         test_losses.append(avg_test_loss)
         test_zero_one_losses.append(avg_test_zero_one)
         test_accuracies.append(test_accuracy)
-        
-        # total_norm = 0.0
-        # for p in model.parameters():
-        #     param_norm = p.grad.detach().data.norm(2)
-        #     total_norm += param_norm.item() ** 2
-        # total_norm = total_norm ** 0.5
+
 
         # More frequent progress reporting with time estimates
         if (epoch + 1) % 10 == 0 or epoch == 0:
@@ -406,9 +384,9 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                   f'EMA diff: {EMA_train_losses[-1] - EMA_train_losses[-2]:.6f} '
                   f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
                   f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
-                  f'LR: {current_lr:.2e} '
+                #   f'LR: {current_lr:.2e} '
                 #   f'Speed: {epochs_per_second:.1f} ep/s '
-                #   f'Norm of gradient: {total_norm:.4f} '
+                  f'Norm of gradient: {EMA_grad_norm[-1]:.4f} '
                   f'EMA Train BCE Loss: {EMA_train_BCE_losses[-1]:.4f} '
                   f'EMA Train Loss: {EMA_train_losses[-1]:.4f}'
                   )
@@ -425,11 +403,11 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
 
     return (train_losses, test_losses, train_accuracies, test_accuracies,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
-            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses)
+            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm)
 
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_epochs,
-                         alpha_average, alpha_stop, eta, eps, save_every=1):
+                         alpha_average, alpha_stop, eta, eps, test_mode=False, save_every=1):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -483,6 +461,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
     list_EMA_test_BCE_losses = []
     list_EMA_train_01_losses = []
     list_EMA_test_01_losses = []
+    list_EMA_grad_norm = []
 
     print(f"\nConfiguration:")    
     print(f"Learning rate (a0) per beta:")
@@ -538,7 +517,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         
 
         (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
-                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses) = training_results
+                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm) = training_results
 
         list_train_BCE_losses.append(train_losses[-50])
         list_test_BCE_losses.append(test_losses[-50])
@@ -548,7 +527,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
         list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
         list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
-
+        list_EMA_grad_norm.append(EMA_grad_norm[-1])
 
         print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                 f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
@@ -579,6 +558,9 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix += f"{len(train_loader.dataset)/1000:.0f}k"
         filename_prefix += f"LR{current_a0}".replace('.', '')
         filename_prefix += f"{loss.upper()}"
+        if test_mode:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            filename_prefix += f"_TEST_{timestamp}"
         
         summary_string =  f"The LMC has been run with the following parameters:\n" \
         f"  - Device: {device}\n" \
@@ -600,7 +582,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f" -  alpha_average: {alpha_average}\n" \
         f" -  alpha_stop: {alpha_stop}\n" \
         f" -  eta: {eta}\n" \
-        f" -  eps: {eps}\n"
+        f" -  eps: {eps}\n"\
+        f" - Gradient norm: {list_EMA_grad_norm}\n"
 
         csv_path = save_moving_average_losses_to_csv(
             list_train_BCE_losses,
