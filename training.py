@@ -135,7 +135,7 @@ def get_a0_for_beta(beta, a0):
 def train_sgld_model(loss, model, train_loader, test_loader, min_epochs, 
                      a0, b, sigma_gauss_prior, 
                      beta, device, dataset_type,
-                     l_max, alpha_average, alpha_stop,  eta, eps):
+                     l_max, alpha_average, alpha_stop,  eta, eps, add_grad_norm=False, add_noise=True):
     """
     Train a neural network using Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -188,7 +188,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     
     # Initialize SGLD optimizer with inverse temperature
     optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
-                     beta=beta, add_noise=True)
+                     beta=beta, add_noise=add_noise)
     
     # Learning rate scheduler with threshold: lr_t = max(a0 * t^(-b), 0.01)
     # This stops the decay when learning rate reaches 0.01
@@ -204,21 +204,15 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
     
-    train_losses = [1.0]  # Initialize with 0.0 for epoch 0
-    test_losses = [1.0]  # Initialize with 0.0 for epoch 0
-    train_accuracies = [1.0]  # Initialize with 0.0 for epoch 0
-    test_accuracies = [1.0]  # Initialize with 0.0 for epoch 0
-    train_zero_one_losses = [1.0]  # Initialize with 0.0 for epoch 0
-    test_zero_one_losses = [1.0]  # Initialize with 0.0 for epoch 0
-    learning_rates = []
-    EMA_train_losses = [0.0, 1.0]  # Initialize with 1.0 for epoch 0
+    train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates = [], [], [], [], [], [], []
+    EMA_train_losses = [1.0]  # Initialize with 1.0 for epoch 0
     EMA_alpha = alpha_stop  # Smoothing factor for EMA of loss
     
-    EMA_train_BCE_losses = [0.0, 1.0]  # Separate EMA for BCE losses if needed
-    EMA_test_BCE_losses = [0.0, 1.0]
-    EMA_train_zero_one_losses = [0.0, 1.0]
-    EMA_test_zero_one_losses = [0.0, 1.0]
-    # EMA_grad_norm = [0.0, 0.0]  # EMA for gradient norm if needed
+    EMA_train_BCE_losses = [1.0]  # Separate EMA for approximating the ergodic average
+    EMA_test_BCE_losses = [1.0]
+    EMA_train_zero_one_losses = [1.0]
+    EMA_test_zero_one_losses = [1.0]
+    EMA_grad_norm = [0.0]  # EMA for gradient norm if needed
     EMA_alpha_BCE = alpha_average
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
@@ -228,7 +222,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     # Progress tracking
     start_time = time.time()
     epoch = 0
-    # if beta == 0.0, I have to sample from the prior many times and take the average both for train and test losses
+    # if beta == I have to sample from the prior many times and take the average both for train and test losses
     if beta == 0.0:
         num_prior_samples = 1000
 
@@ -307,8 +301,9 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             optimizer.step()
             
             # Record the loss (transformed if BCE was used for optimization, raw otherwise)
-            # grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item()
-            # EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
+            if add_grad_norm:
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item()
+                EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
             bce_val = loss_for_recording.item()
             zeroOne_val = zero_one_loss.item()
             train_loss_total += bce_val
@@ -403,11 +398,11 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
 
     return (train_losses, test_losses, train_accuracies, test_accuracies,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
-            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses)
+            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm)
 
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_epochs,
-                         alpha_average, alpha_stop, eta, eps, test_mode=False, save_every=1):
+                         alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, add_noise=True, save_every=1):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -512,12 +507,14 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             alpha_average=alpha_average,
             alpha_stop=alpha_stop,
             eta=eta,
-            eps=eps
+            eps=eps,
+            add_grad_norm=add_grad_norm,
+            add_noise=add_noise
         )
         
 
         (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
-                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses) = training_results
+                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm) = training_results
 
         list_train_BCE_losses.append(train_losses[-50])
         list_test_BCE_losses.append(test_losses[-50])
@@ -527,7 +524,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
         list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
         list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
-        # list_EMA_grad_norm.append(EMA_grad_norm[-1])
+        list_EMA_grad_norm.append(EMA_grad_norm[-1])
 
         print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                 f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
@@ -538,7 +535,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix = ""
         if dataset_type == 'mnist':
             filename_prefix = "M"
-        elif dataset_type == 'CIFAR10':
+        elif dataset_type == 'cifar10':
             filename_prefix = "C"
         else:
             filename_prefix = "S"
@@ -551,10 +548,16 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix += f"L{n_hidden_layers}"
         filename_prefix += f"W{width}"
         if len(train_loader) == 1:
-            filename_prefix += f"ULA"
+            if add_noise == True:
+                filename_prefix += "ULA"
+            else:
+                filename_prefix += "GD"
         else:
-            filename_prefix += f"SGLD"
-        
+            if add_noise == True:
+                filename_prefix += "SGLD"
+            else:
+                filename_prefix += "SGD"
+
         filename_prefix += f"{len(train_loader.dataset)/1000:.0f}k"
         filename_prefix += f"LR{current_a0}".replace('.', '')
         filename_prefix += f"{loss.upper()}"
@@ -582,8 +585,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f" -  alpha_average: {alpha_average}\n" \
         f" -  alpha_stop: {alpha_stop}\n" \
         f" -  eta: {eta}\n" \
-        f" -  eps: {eps}\n"\
-        # f" - Gradient norm: {list_EMA_grad_norm}\n"
+        f" -  eps: {eps}\n" \
+        f" -  Gradient norm: {list_EMA_grad_norm}\n"
 
         csv_path = save_moving_average_losses_to_csv(
             list_train_BCE_losses,

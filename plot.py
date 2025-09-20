@@ -219,25 +219,26 @@ def calibrate (etas, av_bcetrain, av_train01, samplesize):
 
 # CONTROL ------------------------------------------------
 
-display = 0        # 0 = BBCE, 1 = 01
-trueLabels = 0     # 0 = random, 1 = true labels
+display = 0       # 0 = BBCE, 1 = 01
+trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
 
 # GET DATA
 # naming conventions: 
-# ( c or r ) = correct or random labels
 # ( Dataset ) = M for MNIST, C for CIFAR
-# ( L# ) = number of hidden layers. if 1 then W=500, if 2 then W=1000
-# ( LMC method )  U = ULA, S = SGLD
+# ( C or R ) = correct or random labels
+# ( L# ) = number of hidden layers.
+# ( W# ) = width of hidden layers
+# ( LMC method )  ULA, SGLD
 # ( #k  ) = Samplesize in 1000's
-# ( # ) learning rate where 001 = 0.01 etc
-# ( loss fctn )  B = BBCE, S = Savage
+# ( LR# ) learning rate where 001 = 0.01 etc
+# ( loss fctn ) BBCE, Savage
 
 filename = 'ML1S2k001B'
 truefilename, randomfilename = 'c'+filename+'.csv', 'r'+filename+'.csv'
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR001SAVAGE.csv"
+truefilename, randomfilename = "CCL2W1000SGLD2kLR0005BBCE.csv", "CRL2W1000SGLD2kLR0005BBCE.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -283,18 +284,56 @@ av_bcetest[0] = av_bcetest[1]
 #print (pred01)
 
 def showbce (showkls):
-    fig, ax = plt.subplots()             # Create a figure containing a single Axes.
-    ax.semilogx()
-    ax.plot(betas, av_bcetrain, 'o-k', label = 'train')                 # Plot some data on the Axes.
-    ax.plot(betas, predbce   , '+-r', label = 'test bound')                 # Plot some data on the Axes.
-    ax.plot(betas, av_bcetest, '*-g', label = 'test')                 # Plot some data on the Axes.
-    if showkls == 1:
-      ax.plot(betas, testkl , '*-g', label = 'kl(train,test)')                 # Plot some data on the Axes.
-      ax.plot(betas, bounds , 'x-y', label = 'kl-bound')                 # Plot some data on the Axes.
-    # ax.set_title (filename + ' '+title +'BCE-error')
-    ax.legend()
+    plt.rcParams.update({
+        'font.size': 14,           # Base font size
+        'axes.labelsize': 16,      # x and y labels
+        'axes.titlesize': 18,      # Title size
+        'xtick.labelsize': 14,     # x tick labels
+        'ytick.labelsize': 14,     # y tick labels
+        'legend.fontsize': 14,     # Legend font size
+        'lines.linewidth': 2.5,    # Line width
+        'lines.markersize': 8,     # Marker size
+        'figure.figsize': (10, 7), # Figure size for better aspect ratio
+        'axes.grid': False,         # Enable grid
+        'grid.alpha': 0.3,         # Grid transparency
+        'axes.axisbelow': True     # Put grid behind data
+    })
     
+    fig, ax = plt.subplots()
+    ax.semilogx()
+    
+    # Enhanced plotting with original colors and enhanced markers
+    ax.plot(betas[1:], av_bcetrain[1:], 'o-k', linewidth=2.5, 
+            markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
+    ax.plot(betas[1:], predbce[1:], 's-r', linewidth=2.5, 
+            markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
+    ax.plot(betas[1:], av_bcetest[1:], '^-b', linewidth=2.5, 
+            markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
+
+    if showkls == 1:
+        ax.plot(betas[1:], testkl[1:], 'v-g', linewidth=2, 
+                markersize=6, label='KL(Train,Test)', alpha=0.8)
+        ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
+                markersize=6, label='KL-Bound', alpha=0.8)
+    
+    # Enhanced formatting
+    ax.set_xlabel('Beta', fontsize=18)
+    ax.set_ylabel('Loss', fontsize=18)
+    ax.set_ylim(0, 0.6)
+    
+    # Better legend
+    ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
+              framealpha=0.9, edgecolor='black')
+    
+    # Add minor ticks for better readability
+    ax.minorticks_on()
+    ax.tick_params(which='minor', length=3, color='gray')
+    ax.tick_params(which='major', length=6, width=1.2)
+    
+    # Ensure directory exists
     os.makedirs('newplots', exist_ok=True)
+    
+    # Generate filename
     if trueLabels == 1:
         csv_filename = truefilename[:-4]
         if display == 1:
@@ -310,23 +349,67 @@ def showbce (showkls):
             csv_filename = csv_filename + '_loss'
         csv_filename = 'newplots/' + csv_filename + '.png'
 
-    # Save the figure
-    plt.savefig(csv_filename, dpi=300, bbox_inches='tight')
+    # Save with high quality
+    plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
     
-    plt.show()                           # Show the figure.
+    plt.tight_layout()
+    plt.show()
     
 def show01 (showkls):
-    fig, ax = plt.subplots()             # Create a figure containing a single Axes.
+    plt.rcParams.update({
+        'font.size': 14,           # Base font size
+        'axes.labelsize': 16,      # x and y labels
+        'axes.titlesize': 18,      # Title size
+        'xtick.labelsize': 14,     # x tick labels
+        'ytick.labelsize': 14,     # y tick labels
+        'legend.fontsize': 14,     # Legend font size
+        'lines.linewidth': 2.5,    # Line width
+        'lines.markersize': 8,     # Marker size
+        'figure.figsize': (10, 7), # Figure size for better aspect ratio
+        'axes.grid': False,         # Enable grid
+        'grid.alpha': 0.3,         # Grid transparency
+        'axes.axisbelow': True     # Put grid behind data
+    })
+    
+    fig, ax = plt.subplots()
     ax.semilogx()
-    ax.plot(betas, av_train01, 'o-k', label = 'train')                 # Plot some data on the Axes.
-    ax.plot(betas, pred01, '+-r', label = 'test bound')                 # Plot some data on the Axes.
-    ax.plot(betas, av_test01, '*-b', label = 'test')                 # Plot some data on the Axes.
+    
+    # Enhanced plotting with original colors and enhanced markers
+    ax.plot(betas[1:], av_train01[1:], 'o-k', linewidth=2.5, 
+            markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
+    ax.plot(betas[1:], pred01[1:], 's-r', linewidth=2.5, 
+            markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
+    ax.plot(betas[1:], av_test01[1:], '^-b', linewidth=2.5, 
+            markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
+
     if showkls == 1:
-      ax.plot(betas, testkl01 , '.-g', label = 'kl(train,test)')                 # Plot some data on the Axes.
-      ax.plot(betas, bounds , 'x-y', label = 'kl-bound')                 # Plot some data on the Axes.
-    # ax.set_title (filename + ' '+title + '01-error'+bt)
-    ax.legend()
+        ax.plot(betas[1:], testkl01[1:], 'v-g', linewidth=2, 
+                markersize=6, label='KL(Train,Test)', alpha=0.8)
+        ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
+                markersize=6, label='KL-Bound', alpha=0.8)
+        ax.plot(betas[1:], bounds[1:], 'x-y', linewidth=2, 
+                markersize=6, label='kl-bound', alpha=0.8)
+
+    
+    # Enhanced formatting
+    ax.set_xlabel('Beta', fontsize=18)
+    ax.set_ylabel('0-1 Error', fontsize=18)
+    ax.set_ylim([0, 0.6])
+    
+    # Better legend
+    ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
+              framealpha=0.9, edgecolor='black')
+    
+    # Add minor ticks for better readability
+    ax.minorticks_on()
+    ax.tick_params(which='minor', length=3, color='gray')
+    ax.tick_params(which='major', length=6, width=1.2)
+    
+    # Ensure directory exists
     os.makedirs('newplots', exist_ok=True)
+    
+    # Generate filename
     if trueLabels == 1:
         csv_filename = truefilename[:-4]
         if display == 1:
@@ -342,9 +425,12 @@ def show01 (showkls):
             csv_filename = csv_filename + '_loss'
         csv_filename = 'newplots/' + csv_filename + '.png'
 
-    # Save the figure
-    plt.savefig(csv_filename, dpi=300, bbox_inches='tight')
-    plt.show()                           # Show the figure.
+    # Save with high quality
+    plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    
+    plt.tight_layout()
+    plt.show()
 
 if display == 1:
     show01 (showkls) 

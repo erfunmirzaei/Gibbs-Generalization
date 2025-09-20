@@ -35,7 +35,7 @@ TEST_MODE =  False
 USE_RANDOM_LABELS = False
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
-DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
+DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -101,7 +101,7 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=2000,
+                batch_size=50,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -110,7 +110,7 @@ def main():
                 classes=MNIST_CLASSES,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=2000,
+                batch_size=50,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -138,7 +138,7 @@ def main():
     
     # Run the experiment with optimizations
     run_beta_experiments(
-        loss = 'Savage', #'Savage', #'BBCE', #'BCE', #'Tangent'
+        loss = 'BBCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,
@@ -152,7 +152,7 @@ def main():
         train_loader=train_loader, 
         test_loader=test_loader,
         min_epochs = 4000,
-        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7,test_mode = TEST_MODE
+        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7,test_mode = TEST_MODE, add_grad_norm = False, add_noise = False
     )
     
     print(f"\n{'='*70}")

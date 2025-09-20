@@ -260,3 +260,144 @@ if __name__ == "__main__":
 
     plt.show()
 
+# # Publication-ready plotting function with additional customization
+# def create_publication_plot(plot_type='bce', showkls=0, save_format='both', 
+#                           colorblind_friendly=True, style='default'):
+#     """
+#     Create publication-ready plots with enhanced styling options.
+    
+#     Args:
+#         plot_type: 'bce' or '01' for BCE loss or 0-1 error plots
+#         showkls: 0 or 1 to show/hide KL divergence plots
+#         save_format: 'png', 'pdf', 'svg', or 'both' (png + pdf)
+#         colorblind_friendly: Use colorblind-friendly palette
+#         style: matplotlib style ('seaborn-v0_8', 'classic', 'bmh', etc.)
+#     """
+#     # Set style
+#     try:
+#         plt.style.use(style)
+#     except:
+#         plt.style.use('default')
+    
+#     # Publication settings
+#     plt.rcParams.update({
+#         'font.family': 'serif',
+#         'font.serif': ['Times New Roman', 'Times', 'serif'],
+#         'font.size': 16,
+#         'axes.labelsize': 18,
+#         'axes.titlesize': 20,
+#         'xtick.labelsize': 16,
+#         'ytick.labelsize': 16,
+#         'legend.fontsize': 16,
+#         'lines.linewidth': 3,
+#         'lines.markersize': 10,
+#         'figure.figsize': (12, 8),
+#         'axes.grid': True,
+#         'grid.alpha': 0.3,
+#         'axes.axisbelow': True,
+#         'savefig.dpi': 300,
+#         'savefig.bbox': 'tight',
+#         'text.usetex': False  # Set to True if you have LaTeX installed
+#     })
+    
+#     # Color palette
+#     if colorblind_friendly:
+#         colors = {
+#             'train': '#1f77b4',      # Blue
+#             'test_bound': '#ff7f0e', # Orange  
+#             'test': '#2ca02c',       # Green
+#             'kl_train_test': '#d62728',  # Red
+#             'kl_bound': '#9467bd'    # Purple
+#         }
+#     else:
+#         colors = {
+#             'train': '#2E86AB',
+#             'test_bound': '#A23B72', 
+#             'test': '#F18F01',
+#             'kl_train_test': '#C73E1D',
+#             'kl_bound': '#7209B7'
+#         }
+    
+#     fig, ax = plt.subplots()
+#     ax.semilogx()
+    
+#     # Plot data based on type
+#     if plot_type == 'bce':
+#         ax.plot(betas[1:], av_bcetrain[1:], 'o-', color=colors['train'], 
+#                 linewidth=3, markersize=10, label='Training', 
+#                 markerfacecolor='white', markeredgewidth=2.5)
+#         ax.plot(betas[1:], predbce[1:], 's-', color=colors['test_bound'], 
+#                 linewidth=3, markersize=8, label='Test Bound', 
+#                 markerfacecolor='white', markeredgewidth=2.5)
+#         ax.plot(betas[1:], av_bcetest[1:], '^-', color=colors['test'], 
+#                 linewidth=3, markersize=10, label='Test', 
+#                 markerfacecolor='white', markeredgewidth=2.5)
+#         ylabel = 'BCE Loss'
+#         plot_suffix = '_bce_publication'
+#     else:  # plot_type == '01'
+#         ax.plot(betas[1:], av_train01[1:], 'o-', color=colors['train'], 
+#                 linewidth=3, markersize=10, label='Training', 
+#                 markerfacecolor='white', markeredgewidth=2.5)
+#         ax.plot(betas[1:], pred01, 's-', color=colors['test_bound'], 
+#                 linewidth=3, markersize=8, label='Test Bound', 
+#                 markerfacecolor='white', markeredgewidth=2.5)
+#         ax.plot(betas[1:], av_test01[1:], '^-', color=colors['test'], 
+#                 linewidth=3, markersize=10, label='Test', 
+#                 markerfacecolor='white', markeredgewidth=2.5)
+#         ylabel = '0-1 Error'
+#         plot_suffix = '_01_publication'
+    
+#     if showkls == 1:
+#         if plot_type == 'bce':
+#             ax.plot(betas[1:], testkl[1:], 'v-', color=colors['kl_train_test'], 
+#                     linewidth=2.5, markersize=7, label='KL(Train,Test)', alpha=0.8)
+#         else:
+#             ax.plot(betas[1:], testkl01[1:], 'v-', color=colors['kl_train_test'], 
+#                     linewidth=2.5, markersize=7, label='KL(Train,Test)', alpha=0.8)
+#         ax.plot(betas[1:], bounds[1:], 'D-', color=colors['kl_bound'], 
+#                 linewidth=2.5, markersize=7, label='KL-Bound', alpha=0.8)
+    
+#     # Enhanced formatting
+#     ax.set_xlabel(r'$\beta$', fontsize=20, fontweight='bold')
+#     ax.set_ylabel(ylabel, fontsize=20, fontweight='bold')
+#     ax.set_ylim(0, 0.6)
+    
+#     # Enhanced legend
+#     ax.legend(frameon=True, fancybox=True, shadow=True, loc='best', 
+#               framealpha=0.95, edgecolor='black', facecolor='white')
+    
+#     # Enhanced ticks
+#     ax.minorticks_on()
+#     ax.tick_params(which='minor', length=4, color='gray')
+#     ax.tick_params(which='major', length=8, width=1.5)
+    
+#     # Add subtle border
+#     for spine in ax.spines.values():
+#         spine.set_linewidth(1.5)
+    
+#     plt.tight_layout()
+    
+#     # Generate base filename
+#     os.makedirs('newplots', exist_ok=True)
+#     if trueLabels == 1:
+#         base_filename = truefilename[:-4] + plot_suffix
+#     else:
+#         base_filename = randomfilename[:-4] + plot_suffix
+    
+#     # Save in requested formats
+#     if save_format in ['png', 'both']:
+#         plt.savefig(f'newplots/{base_filename}.png', dpi=300, 
+#                    bbox_inches='tight', facecolor='white', edgecolor='none')
+#     if save_format in ['pdf', 'both']:
+#         plt.savefig(f'newplots/{base_filename}.pdf', dpi=300, 
+#                    bbox_inches='tight', facecolor='white', edgecolor='none')
+#     if save_format == 'svg':
+#         plt.savefig(f'newplots/{base_filename}.svg', dpi=300, 
+#                    bbox_inches='tight', facecolor='white', edgecolor='none')
+    
+#     plt.show()
+#     return fig, ax
+
+# # Example usage for publication plots:
+# # create_publication_plot('bce', showkls=1, save_format='both', colorblind_friendly=True)
+# # create_publication_plot('01', showkls=1, save_format='pdf', colorblind_friendly=False)

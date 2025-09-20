@@ -90,6 +90,8 @@ Desktop.ini
 # Model checkpoints
 newplots/
 plots/
+read_csv_2_lists.py
+hmc.py
 *.pth
 *.ckpt
 *.h5
