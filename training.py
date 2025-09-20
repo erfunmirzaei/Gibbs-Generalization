@@ -205,7 +205,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
     
     train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates = [], [], [], [], [], [], []
-    EMA_train_losses = [1.0]  # Initialize with 1.0 for epoch 0
+    EMA_train_losses = [0.0, 1.0]  # Initialize with 1.0 for epoch 0
     EMA_alpha = alpha_stop  # Smoothing factor for EMA of loss
     
     EMA_train_BCE_losses = [1.0]  # Separate EMA for approximating the ergodic average
