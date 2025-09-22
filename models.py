@@ -194,14 +194,20 @@ class LeNet5(nn.Module):
         self.fc2 = nn.Linear(84, num_classes)  # Output layer
     
     def forward(self, x):
-        # x shape: (batch_size, 1, 28, 28) or (batch_size, 1, 32, 32)
-        
+        if x.dim() == 2:
+            # If input is flattened (batch_size, 784), reshape to (batch_size, 1, 28, 28)
+            x = x.view(x.size(0), 1, 28, 28)
+        elif x.dim() == 3:
+            # If input is (batch_size, 28, 28), add channel dimension
+            x = x.unsqueeze(1)  # Add channel dimension: (batch_size, 1, 28, 28)
+
         # If input is 28×28, we can pad it to 32×32
         # Alternative: resize before feeding. Here’s padding approach:
         if x.shape[-1] == 28:
             # pad 2 pixels on each side (left, right, top, bottom)
             x = F.pad(x, (2, 2, 2, 2))  # pad = (left, right, top, bottom)
-        
+
+        # Handle both flattened input (batch_size, 1024) and image input (batch_size, 1, 32, 32)
         # Layer1
         x = F.relu(self.conv1(x))  # → [batch, 6, 28, 28] if input was 32×32
         x = self.pool1(x)          # → [batch, 6, 14, 14]

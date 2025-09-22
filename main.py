@@ -20,6 +20,7 @@ from training import run_beta_experiments
 # 3. For deeper networks, the plot looks different - why? We are visiting a phase transition?
 #  finally, the bounds are working without any calibration. I guess this is excellent news for the paper, and also, it is very interesting to think about why making the neural net deeper and more overparametrized has such an effect.
 # 4. What is the the role of stopping criterion to be close or far from the optimum?
+# 5. Why the upper bound on random labels will be the upper bound on true labels?
 # TODO: Future: 
 # 0. 1 hidden layer with 1000 units for MNIST
 # 1. Savage loss, ULA/SGLD?, 1L/2L?, n=2k/8k? 
@@ -73,12 +74,12 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
-            # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
+            beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
-            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
-            # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
             # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
@@ -100,18 +101,18 @@ def main():
         if USE_RANDOM_LABELS:
             train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
                 classes=MNIST_CLASSES,
-                n_train_per_group=500,
+                n_train_per_group=4000,
                 n_test_per_group=5000,
-                batch_size=50,
+                batch_size=100,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
             train_loader, test_loader = get_mnist_binary_dataloaders(
                 classes=MNIST_CLASSES,
-                n_train_per_group=500,
+                n_train_per_group=4000,
                 n_test_per_group=5000,
-                batch_size=50,
+                batch_size=100,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -145,7 +146,7 @@ def main():
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=1,  # 1 or 2 hidden layers
+        n_hidden_layers='L',  # 1 or 2 hidden layers
         width=500,
         dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,

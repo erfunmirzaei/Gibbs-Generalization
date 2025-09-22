@@ -305,7 +305,8 @@ if trueLabels == 1:   # then reload
 print ('calibration factor =',factor)
 pred01_2 = predict01 (betas_2, av_bcetrain_2, av_train01_2, samplesize_2, factor)
 
-truefilename_3, randomfilename_3 = "MCL2W1000SGLD2kLR0005BBCE.csv", "MRL2W1000SGLD2kLR0005BBCE.csv"
+
+truefilename_3, randomfilename_3 = "MCLLW2000SGLD2kLR0005BBCE.csv", "MRLLW2000SGLD2kLR0005BBCE.csv"
 
 # for calibration load random data first
 betas_3, bcetrain_3, bcetest_3, train01_3, test01_3, av_bcetrain_3, av_bcetest_3,\
@@ -340,45 +341,9 @@ if trueLabels == 1:   # then reload
 print ('calibration factor =',factor)
 pred01_3 = predict01 (betas_3, av_bcetrain_3, av_train01_3, samplesize_3, factor)
 
-
-truefilename_4, randomfilename_4 = "MCLLW2000SGLD2kLR0005BBCE.csv", "MRLLW2000SGLD2kLR0005BBCE.csv"
-
-# for calibration load random data first
-betas_4, bcetrain_4, bcetest_4, train01_4, test01_4, av_bcetrain_4, av_bcetest_4,\
-        av_train01_4, av_test01_4, samplesize_4 = main( randomfilename_4 )
-samplesize_4 = samplesize_4[0]
-title = 'random labels '
-print  (samplesize_4)      
-
-if boundtype == 0: 
-    bt = ' kl'
-if boundtype == 1:
-    bt = ' Hoeffding'
-
-print (betas_4)
-
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_4[0] = av_bcetest_4[1]
-av_train01_4[0] = 0.5
-av_test01_4[0] = 0.5
-
-factor = calibrate (betas_4, av_bcetrain_4, av_train01_4, samplesize_4)
-
-
-if trueLabels == 1:   # then reload 
-    betas_4, bcetrain_4, bcetest_4, train01_4, test01_4, av_bcetrain_4, av_bcetest_4,\
-        av_train01_4, av_test01_4, samplesize_4 = main( truefilename_4 ) 
-    title = 'true labels '
-    samplesize_4 = samplesize_4[0]
-    #av_bcetrain[0]=(0.5+av_bcetrain[1])/2
-
-print ('calibration factor =',factor)
-pred01_4 = predict01 (betas_4, av_bcetrain_4, av_train01_4, samplesize_4, factor)
-
-test_matrix = np.zeros((4,len(av_test01_1)))
-bound_matrix = np.zeros((4,len(av_test01_1)))
-for i in range(4):
+test_matrix = np.zeros((3,len(av_test01_1)))
+bound_matrix = np.zeros((3,len(av_test01_1)))
+for i in range(3):
     for j in range(len(av_test01_1)):
         if i == 0:
             test_matrix[i][j] = av_test01_1[j]
@@ -389,9 +354,6 @@ for i in range(4):
         if i == 2:
             test_matrix[i][j] = av_test01_3[j]
             bound_matrix[i][j] = pred01_3[j]
-        if i == 3:
-            test_matrix[i][j] = av_test01_4[j]
-            bound_matrix[i][j] = pred01_4[j]
 
 
 # Create formatted table
@@ -402,33 +364,33 @@ print('='*80)
 # First table: Test Errors
 print('\nTEST ERRORS (0-1 Loss):')
 print('-'*60)
-header_test = f"{'Beta':>8} | {'Architecture 1':>15} | {'Architecture 2':>15} | {'Architecture 3':>15} | {'Architecture 4':>15}"
+header_test = f"{'Beta':>8} | {'Architecture 1':>15} | {'Architecture 2':>15} | {'Architecture 3':>15}"
 print(header_test)
 print('-'*len(header_test))
 
 for j in range(len(betas_1)):
     beta_val = betas_1[j]
-    test1, test2, test3, test4 = test_matrix[0][j], test_matrix[1][j], test_matrix[2][j], test_matrix[3][j]
-    row = f"{beta_val:>8.0f} | {test1:>15.4f} | {test2:>15.4f} | {test3:>15.4f} | {test4:>15.4f}"
+    test1, test2, test3 = test_matrix[0][j], test_matrix[1][j], test_matrix[2][j]
+    row = f"{beta_val:>8.0f} | {test1:>15.4f} | {test2:>15.4f} | {test3:>15.4f} "
     print(row)
 
 # Second table: Generalization Bounds
 print('\n\nGENERALIZATION BOUNDS:')
 print('-'*60)
-header_bound = f"{'Beta':>8} | {'Architecture 1':>15} | {'Architecture 2':>15} | {'Architecture 3':>15} | {'Architecture 4':>15}"
+header_bound = f"{'Beta':>8} | {'Architecture 1':>15} | {'Architecture 2':>15} | {'Architecture 3':>15}"
 print(header_bound)
 print('-'*len(header_bound))
 
 for j in range(len(betas_1)):
     beta_val = betas_1[j]
-    bound1, bound2, bound3, bound4 = bound_matrix[0][j], bound_matrix[1][j], bound_matrix[2][j], bound_matrix[3][j]
-    row = f"{beta_val:>8.0f} | {bound1:>15.4f} | {bound2:>15.4f} | {bound3:>15.4f} | {bound4:>15.4f}"
+    bound1, bound2, bound3 = bound_matrix[0][j], bound_matrix[1][j], bound_matrix[2][j]
+    row = f"{beta_val:>8.0f} | {bound1:>15.4f} | {bound2:>15.4f} | {bound3:>15.4f} "
     print(row)
 
 # Combined table: Test / Bound pairs
 print('\n\nCOMBINED TABLE (Test Error / Bound):')
 print('-'*85)
-header_combined = f"{'Beta':>8} | {'Architecture 1':>25} | {'Architecture 2':>25} | {'Architecture 3':>25} | {'Architecture 4':>25}"
+header_combined = f"{'Beta':>8} | {'Architecture 1':>25} | {'Architecture 2':>25} | {'Architecture 3':>25} "
 print(header_combined)
 print('-'*len(header_combined))
 
@@ -437,17 +399,84 @@ for j in range(len(betas_1)):
     test1, bound1 = test_matrix[0][j], bound_matrix[0][j]
     test2, bound2 = test_matrix[1][j], bound_matrix[1][j]
     test3, bound3 = test_matrix[2][j], bound_matrix[2][j]
-    test4, bound4 = test_matrix[3][j], bound_matrix[3][j]
 
-    row = f"{beta_val:>8.0f} | {test1:>8.4f} / {bound1:>8.4f} | {test2:>8.4f} / {bound2:>8.4f} | {test3:>8.4f} / {bound3:>8.4f} | {test4:>8.4f} / {bound4:>8.4f}"
+    row = f"{beta_val:>8.0f} | {test1:>8.4f} / {bound1:>8.4f} | {test2:>8.4f} / {bound2:>8.4f} | {test3:>8.4f} / {bound3:>8.4f}"
     print(row)
 
 print('='*80)
 print('\nLegend:')
 print('Architecture 1: MCL1W500SGLD2kLR001BBCE (1 hidden layer, 500 width)')
 print('Architecture 2: MCL2W1000SGLD2kLR001BBCE (2 hidden layers, 1000 width)')
-print('Architecture 3: MCL2W1000SGLD2kLR001BBCE (2 hidden layers, 1000 width)')
-print('Architecture 4: MCLLW2000SGLD2kLR0005BBCE (LeNet5)')
+print('Architecture 3: MCLLW2000SGLD2kLR0005BBCE (LeNet5)')
 print('Test: Actual test error (0-1 loss)')
 print('Bound: Generalization bound prediction')
 print('='*80)
+
+# Generate LaTeX table
+print('\n\nLaTeX Table:')
+print('='*60)
+
+# Find indices for beta = 250 and beta = 16000
+beta_250_idx = None
+beta_16000_idx = None
+for i, beta in enumerate(betas_1):
+    if beta == 250.0:
+        beta_250_idx = i
+    elif beta == 16000.0:
+        beta_16000_idx = i
+
+if beta_250_idx is not None and beta_16000_idx is not None:
+    # Extract the required values
+    bound_250_arch1 = bound_matrix[0][beta_250_idx]
+    bound_250_arch2 = bound_matrix[1][beta_250_idx]
+    bound_250_arch3 = bound_matrix[2][beta_250_idx]
+    
+    test_16000_arch1 = test_matrix[0][beta_16000_idx]
+    test_16000_arch2 = test_matrix[1][beta_16000_idx]
+    test_16000_arch3 = test_matrix[2][beta_16000_idx]
+    
+    bound_16000_arch1 = bound_matrix[0][beta_16000_idx]
+    bound_16000_arch2 = bound_matrix[1][beta_16000_idx]
+    bound_16000_arch3 = bound_matrix[2][beta_16000_idx]
+    
+    # Generate LaTeX table
+    latex_table = f"""
+\\begin{{table}}[h]
+\\centering
+\\begin{{tabular}}{{|l|c|c|c|}}
+\\hline
+& Architecture 1 & Architecture 2 & Architecture 3 \\\\
+\\hline
+Bound at $\\beta = 250$ & {bound_250_arch1:.4f} & {bound_250_arch2:.4f} & {bound_250_arch3:.4f} \\\\
+\\hline
+Test Error at $\\beta = 16000$ & {test_16000_arch1:.4f} & {test_16000_arch2:.4f} & {test_16000_arch3:.4f} \\\\
+\\hline
+Bound at $\\beta = 16000$ & {bound_16000_arch1:.4f} & {bound_16000_arch2:.4f} & {bound_16000_arch3:.4f} \\\\
+\\hline
+\\end{{tabular}}
+\\caption{{Generalization bounds and test errors for different neural network architectures on MNIST dataset.}}
+\\label{{tab:mnist_results}}
+\\end{{table}}
+"""
+    
+    print(latex_table)
+    
+    # Save LaTeX table to file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    latex_file_path = os.path.join(script_dir, "mnist_results_table.tex")
+    
+    with open(latex_file_path, 'w') as f:
+        f.write(latex_table)
+    
+    print(f"LaTeX table saved to: {latex_file_path}")
+    
+    # Also print values for verification
+    print(f"\nExtracted values:")
+    print(f"Bound at beta=250: Arch1={bound_250_arch1:.4f}, Arch2={bound_250_arch2:.4f}, Arch3={bound_250_arch3:.4f}")
+    print(f"Test at beta=16000: Arch1={test_16000_arch1:.4f}, Arch2={test_16000_arch2:.4f}, Arch3={test_16000_arch3:.4f}")
+    print(f"Bound at beta=16000: Arch1={bound_16000_arch1:.4f}, Arch2={bound_16000_arch2:.4f}, Arch3={bound_16000_arch3:.4f}")
+    
+else:
+    print("Error: Could not find beta values 250 or 16000 in the data")
+
+print('='*60)

@@ -65,8 +65,8 @@ def read_csv_2_lists(csv_file_path):
 def main(csv_filename):
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-   
-    csv_path = os.path.join(script_dir, "csv_EMA", csv_filename)
+    csv_path = os.path.join(script_dir, "newcsv", csv_filename)
+
     # Read the CSV files
     beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,\
     list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples = read_csv_2_lists(csv_path)
@@ -201,23 +201,24 @@ def predict01hoeffding (betas, av_bcetrain, av_train01, samplesize, factor):
         index = index + 1 
     return ps
 
-def calibrate (betas, av_bcetrain, av_train01, samplesize):
+def calibrate (etas, av_bcetrain, av_train01, samplesize):
     l,r = 0.1,100
     factor = (l + r) / 2
     pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
     while (r-l > 0.01) or (minlist(pred) < 0.5):
-        if minlist (pred[1:])  < 0.5:
+        if minlist (pred[1::])  < 0.5:
             l = factor
-        if minlist (pred[1:]) >= 0.5:
+        if minlist (pred[1::]) >= 0.5:
             r = factor
         factor = (l + r) / 2
+        print (factor)
         pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
     return factor
 
 
 # CONTROL ------------------------------------------------
 
-display = 1       # 0 = BBCE, 1 = 01
+display = 1        # 0 = BBCE, 1 = 01
 trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
@@ -225,16 +226,17 @@ calibration = 1    # 0 = no calibration 1 = do it
 singledraw = 1     # 0 = posterior average, 1 = single draw
 # GET DATA
 # naming conventions: 
+# ( c or r ) = correct or random labels
 # ( Dataset ) = M for MNIST, C for CIFAR
-# ( C or R ) = correct or random labels
-# ( L# ) = number of hidden layers.
-# ( W# ) = width of hidden layers
-# ( LMC method )  ULA, SGLD
+# ( L# ) = number of hidden layers. if 1 then W=500, if 2 then W=1000
+# ( LMC method )  U = ULA, S = SGLD
 # ( #k  ) = Samplesize in 1000's
-# ( LR# ) learning rate where 001 = 0.01 etc
-# ( loss fctn ) BBCE, Savage
+# ( # ) learning rate where 001 = 0.01 etc
+# ( loss fctn )  B = BBCE, S = Savage
 
-truefilename, randomfilename = "CCL2W2000SGLD8kLR0005BBCE.csv", "CRL2W2000SGLD8kLR0005BBCE.csv"
+filename = 'ML2S8k001B'
+truefilename, randomfilename = 'c'+filename+'.csv', 'r'+filename+'.csv'
+
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -250,6 +252,13 @@ if boundtype == 1:
 
 print (betas)
 
+# av_bcetrain[0]=0.5
+#av_bcetrain[0]=av_bcetrain[1]
+#av_bcetest[0] = av_bcetest[1]
+#av_train01[0] = 0.5
+#train01[0] = 0.5
+#av_test01[0] = 0.5
+
 if calibration == 1:
     factor = calibrate (betas, av_bcetrain, av_train01, samplesize)
 else:
@@ -260,6 +269,7 @@ if trueLabels == 1:   # then reload
         av_train01, av_test01, samplesize = main( truefilename ) 
     title = 'true labels '
     samplesize = samplesize[0]
+    #av_bcetrain[0]=(0.5+av_bcetrain[1])/2
 
 print ('calibration factor =',factor)
 
@@ -274,181 +284,41 @@ if boundtype == 0:
         pred01 = predict01 (betas, av_bcetrain, train01, samplesize, factor)
     else:
         pred01 = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
-        
+av_bcetest[0] = av_bcetest[1]
+#print (pred01)
+
 def showbce (showkls):
-    plt.rcParams.update({
-        'font.size': 14,           # Base font size
-        'axes.labelsize': 16,      # x and y labels
-        'axes.titlesize': 18,      # Title size
-        'xtick.labelsize': 14,     # x tick labels
-        'ytick.labelsize': 14,     # y tick labels
-        'legend.fontsize': 14,     # Legend font size
-        'lines.linewidth': 2.5,    # Line width
-        'lines.markersize': 8,     # Marker size
-        'figure.figsize': (10, 7), # Figure size for better aspect ratio
-        'axes.grid': False,         # Enable grid
-        'grid.alpha': 0.3,         # Grid transparency
-        'axes.axisbelow': True     # Put grid behind data
-    })
-    
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots()             # Create a figure containing a single Axes.
     ax.semilogx()
-    
-    # Enhanced plotting with original colors and enhanced markers
-    if singledraw == 1:
-        ax.plot(betas[1:], bcetrain[1:], 'o-k', linewidth=2.5, 
-                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], predbce[1:], 's-r', linewidth=2.5, 
-                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], bcetest[1:], '^-b', linewidth=2.5, 
-                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
-    else:
-        ax.plot(betas[1:], av_bcetrain[1:], 'o-k', linewidth=2.5, 
-                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], predbce[1:], 's-r', linewidth=2.5, 
-                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], av_bcetest[1:], '^-b', linewidth=2.5, 
-                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
-
+    ax.plot(betas[1::], av_bcetrain[1::], 'o-k', label = 'train error')                 # Plot some data on the Axes.
+    ax.plot(betas[1::], av_bcetest[1::], '*-g', label = 'test error')                 # Plot some data on the Axes.
+    ax.plot(betas[1::], predbce[1::]   , '+-r', label = 'test bound')                 # Plot some data on the Axes.
     if showkls == 1:
-        ax.plot(betas[1:], testkl[1:], 'v-g', linewidth=2, 
-                markersize=6, label='KL(Train,Test)', alpha=0.8)
-        ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
-                markersize=6, label='KL-Bound', alpha=0.8)
-    
-    # Enhanced formatting
-    ax.set_xlabel('Beta', fontsize=18)
-    ax.set_ylabel('Loss', fontsize=18)
-    ax.set_ylim(0, 0.6)
-    
-    # Better legend
-    ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
-              framealpha=0.9, edgecolor='black')
-    
-    # Add minor ticks for better readability
-    ax.minorticks_on()
-    ax.tick_params(which='minor', length=3, color='gray')
-    ax.tick_params(which='major', length=6, width=1.2)
-    
-    # Ensure directory exists
-    os.makedirs('newplots', exist_ok=True)
-    
-    # Generate filename
-    if trueLabels == 1:
-        csv_filename = truefilename[:-4]
-        if display == 1:
-            csv_filename = csv_filename + '_01'
-        else:
-            csv_filename = csv_filename + '_loss'
-        if singledraw == 1:
-            csv_filename = csv_filename + '_singledraw'
-        csv_filename = 'newplots/' + csv_filename + '.png'
-    else:
-        csv_filename = randomfilename[:-4]
-        if display == 1:
-            csv_filename = csv_filename + '_01'
-        else:
-            csv_filename = csv_filename + '_loss'
-        if singledraw == 1:
-            csv_filename = csv_filename + '_singledraw'
-        csv_filename = 'newplots/' + csv_filename + '.png'
-
-    # Save with high quality
-    plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
-                facecolor='white', edgecolor='none')
-    
-    plt.tight_layout()
-    plt.show()
+      ax.plot(betas[1::], testkl[1::] , '*-g', label = 'kl(train,test)')                 # Plot some data on the Axes.
+      ax.plot(betas[1::], bounds[1::] , 'x-y', label = 'kl-bound')                 # Plot some data on the Axes.
+    ax.set_title (filename + ' '+title +'BCE-error')
+    ax.legend()
+    plt.show()                           # Show the figure.
     
 def show01 (showkls):
-    plt.rcParams.update({
-        'font.size': 14,           # Base font size
-        'axes.labelsize': 16,      # x and y labels
-        'axes.titlesize': 18,      # Title size
-        'xtick.labelsize': 14,     # x tick labels
-        'ytick.labelsize': 14,     # y tick labels
-        'legend.fontsize': 14,     # Legend font size
-        'lines.linewidth': 2.5,    # Line width
-        'lines.markersize': 8,     # Marker size
-        'figure.figsize': (10, 7), # Figure size for better aspect ratio
-        'axes.grid': False,         # Enable grid
-        'grid.alpha': 0.3,         # Grid transparency
-        'axes.axisbelow': True     # Put grid behind data
-    })
-    
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots()             # Create a figure containing a single Axes.
     ax.semilogx()
-    
-    # Enhanced plotting with original colors and enhanced markers
-    if singledraw == 1:
-        ax.plot(betas[1:], train01[1:], 'o-k', linewidth=2.5, 
-                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], pred01[1:], 's-r', linewidth=2.5, 
-                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], test01[1:], '^-b', linewidth=2.5, 
-                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
-    else:
-        ax.plot(betas[1:], av_train01[1:], 'o-k', linewidth=2.5, 
-                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], pred01[1:], 's-r', linewidth=2.5, 
-                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
-        ax.plot(betas[1:], av_test01[1:], '^-b', linewidth=2.5, 
-                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
-
+    ax.plot(betas[1::], av_train01[1::], 'o-k', label = 'train error')                 # Plot some data on the Axes.
+    ax.plot(betas[1::], av_test01[1::], '*-b', label = 'test error')                 # Plot some data on the Axes.
+    ax.plot(betas[1::], pred01[1::], '+-r', label = 'test bound') 
+    ax.set_ylim ([0,0.6])                # Plot some data on the Axes.
     if showkls == 1:
-        ax.plot(betas[1:], testkl01[1:], 'v-g', linewidth=2, 
-                markersize=6, label='KL(Train,Test)', alpha=0.8)
-        ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
-                markersize=6, label='KL-Bound', alpha=0.8)
-        ax.plot(betas[1:], bounds[1:], 'x-y', linewidth=2, 
-                markersize=6, label='kl-bound', alpha=0.8)
-
-    
-    # Enhanced formatting
-    ax.set_xlabel('Beta', fontsize=18)
-    ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.65])
-    
-    # Better legend
-    ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
-              framealpha=0.9, edgecolor='black')
-    
-    # Add minor ticks for better readability
-    ax.minorticks_on()
-    ax.tick_params(which='minor', length=3, color='gray')
-    ax.tick_params(which='major', length=6, width=1.2)
-    
-    # Ensure directory exists
-    os.makedirs('newplots', exist_ok=True)
-    
-    # Generate filename
-    if trueLabels == 1:
-        csv_filename = truefilename[:-4]
-        if display == 1:
-            csv_filename = csv_filename + '_01'
-        else:
-            csv_filename = csv_filename + '_loss'
-        if singledraw == 1:
-            csv_filename = csv_filename + '_singledraw'
-        csv_filename = 'newplots/' + csv_filename + '.png'
-    else:
-        csv_filename = randomfilename[:-4]
-        if display == 1:
-            csv_filename = csv_filename + '_01'
-        else:
-            csv_filename = csv_filename + '_loss'
-        if singledraw == 1:
-            csv_filename = csv_filename + '_singledraw'
-        csv_filename = 'newplots/' + csv_filename + '.png'
-
-    # Save with high quality
-    plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
-                facecolor='white', edgecolor='none')
-    
-    plt.tight_layout()
-    plt.show()
+      ax.plot(betas[1::], testkl01[1::] , '.-g', label = 'kl(train,test)')                 # Plot some data on the Axes.
+      ax.plot(betas[1::], bounds[1::] , 'x-y', label = 'kl-bound')                 # Plot some data on the Axes.
+    ax.set_title (filename + ' '+title + '01-error'+bt)
+    ax.legend()
+    plt.show()                           # Show the figure.
 
 if display == 1:
     show01 (showkls) 
 else:
     showbce (showkls)
+
+print (av_train01[8])
+print (av_test01[8])
+print (pred01[8])
