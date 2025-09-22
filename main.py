@@ -35,7 +35,7 @@ TEST_MODE =  False
 USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
-DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
+DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -81,11 +81,11 @@ def main():
             # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
-            # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             # a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
-            # a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
+            a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
     
     print(f"\n{'='*70}")
@@ -145,7 +145,7 @@ def main():
         b=0.5,
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=2,  # 1 or 2 hidden layers
+        n_hidden_layers='L',  # 1 or 2 hidden layers
         width=2000,
         dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
@@ -153,7 +153,7 @@ def main():
         train_loader=train_loader, 
         test_loader=test_loader,
         min_epochs = 4000,
-        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7,test_mode = TEST_MODE, add_grad_norm = False, add_noise = False
+        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7,test_mode = TEST_MODE, add_grad_norm = False, add_noise = True
     )
     
     print(f"\n{'='*70}")

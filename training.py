@@ -15,7 +15,7 @@ import csv
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
-from models import  initialize_nn_weights_gaussian, FCN1L,FCN2L
+from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
 from sgld import SGLD
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
@@ -481,14 +481,22 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         if dataset_type == 'mnist':
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            else:
+            elif n_hidden_layers == 2:
                 model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
+            elif n_hidden_layers == 3:
+                model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
+            elif n_hidden_layers == 'L':
+                model = LeNet5(num_classes=1)
 
         elif dataset_type == 'cifar10':
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            else:
+            elif n_hidden_layers == 2:
                 model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+            elif n_hidden_layers == 3:
+                model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+            elif n_hidden_layers == 'V':
+                model = VGG16_CIFAR(num_classes=1)
 
         # Train the model
         training_results = train_sgld_model(

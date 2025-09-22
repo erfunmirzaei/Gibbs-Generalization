@@ -238,7 +238,7 @@ showkls = 0        # 0 = don't show, 1 = show
 filename = 'ML1S2k001B'
 truefilename, randomfilename = 'c'+filename+'.csv', 'r'+filename+'.csv'
 
-truefilename, randomfilename = "CCL2W1000SGLD2kLR0005BBCE.csv", "CRL2W1000SGLD2kLR0005BBCE.csv"
+truefilename, randomfilename = "MCLLW2000SGLD2kLR0005BBCE.csv", "MRLLW2000SGLD2kLR0005BBCE.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\

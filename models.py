@@ -1,7 +1,7 @@
 """
 Neural network models for the Gibbs generalization bound experiments.
 
-This module contains the neural network architectures (SynthNN, MNISTNN)
+This module contains the neural network architectures (SynthNN, MN 
 used in the experiments. All models are GPU-ready.
 """
 import numpy as np
@@ -102,6 +102,60 @@ class FCN2L(nn.Module):
         return x
 
     
+class FCN3L(nn.Module):
+    """
+    Three-layer neural network for MNIST binary classification.
+    
+    This network is designed for binary classification on MNIST data, specifically
+    for distinguishing between classes 0 and 1. It uses a three hidden layer
+    architecture with ReLU activations and produces raw logits for binary classification.
+    
+    Architecture:
+        - Input layer: 784 features (28×28 flattened MNIST images)
+        - First hidden layer: 50 units with ReLU activation (default)
+        - Second hidden layer: 50 units with ReLU activation (default)
+        - Third hidden layer: 50 units with ReLU activation (default)
+        - Output layer: 1 unit (binary classification logits)
+    
+    Args:
+        input_dim (int, optional): Number of input features. Defaults to 784 (28×28).
+        hidden_dim (int, optional): Number of hidden units in each layer. Defaults to 50.
+        output_dim (int, optional): Number of output units. Defaults to 1.
+    
+    Attributes:
+        fc1 (nn.Linear): First fully connected layer (input to first hidden).
+        fc2 (nn.Linear): Second fully connected layer (first hidden to second hidden).
+        fc3 (nn.Linear): Third fully connected layer (second hidden to third hidden).
+        fc4 (nn.Linear): Fourth fully connected layer (third hidden to output).
+
+    """
+
+    def __init__(self, input_dim: int = 784, hidden_dim: int = 50, output_dim: int = 1):
+        super(FCN3L, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)  # Hidden layer
+        self.fc3 = nn.Linear(hidden_dim, hidden_dim)  # Hidden layer
+        self.fc4 = nn.Linear(hidden_dim, output_dim)  # Single output for binary classification
+
+    def forward(self, x):
+        """
+        Forward pass through the network.
+        
+        Args:
+            x (torch.Tensor): Input tensor of shape (batch_size, 28, 28) or 
+                            (batch_size, 784). Will be flattened automatically.
+        
+        Returns:
+            torch.Tensor: Output logits of shape (batch_size, output_dim).
+        """
+        x = x.view(x.size(0), -1)  # Flatten for MNIST (batch_size, 28*28)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        x = self.fc4(x)  # No activation, raw logits
+        return x
+
+    
 class LeNet5(nn.Module):
     """
     LeNet-5 architecture for MNIST digit classification (10 classes).
@@ -195,6 +249,14 @@ class VGG16_CIFAR(nn.Module):
         )
 
     def forward(self, x):
+            # Handle both flattened input (batch_size, 3072) and image input (batch_size, 3, 32, 32)
+        if x.dim() == 2:
+            # If input is flattened (batch_size, 3072), reshape to (batch_size, 3, 32, 32)
+            x = x.view(x.size(0), 3, 32, 32)
+        elif x.dim() == 3:
+            # If input is (batch_size, 32, 32), add channel dimension
+            x = x.unsqueeze(1)  # Add channel dimension: (batch_size, 3, 32, 32)
+
         x = self.features(x)
         # Flatten
         x = x.view(x.size(0), -1)
