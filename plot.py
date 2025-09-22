@@ -219,7 +219,7 @@ def calibrate (etas, av_bcetrain, av_train01, samplesize):
 
 # CONTROL ------------------------------------------------
 
-display = 0       # 0 = BBCE, 1 = 01
+display = 1       # 0 = BBCE, 1 = 01
 trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
