@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import csv
 import os
 import numpy as np
@@ -201,19 +199,17 @@ def predict01hoeffding (betas, av_bcetrain, av_train01, samplesize, factor):
         index = index + 1 
     return ps
 
-def calibrate (betas, av_bcetrain, av_train01, samplesize):
+def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
     l,r = 0.1,100
     factor = (l + r) / 2
     pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
-    pred[0] = pred[1]
     while (r-l > 0.01) or (minlist(pred) < 0.5):
-        if minlist (pred)  < 0.5:
+        if minlist (pred[1:])  < thresh:
             l = factor
-        if minlist (pred) >= 0.5:
+        if minlist (pred[1:]) >= thresh:
             r = factor
         factor = (l + r) / 2
         pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
-        pred[0] = pred[1]
     return factor
 
 
@@ -250,13 +246,6 @@ if boundtype == 1:
     bt = ' Hoeffding'
 
 print (betas_1)
-
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_1[0] = av_bcetest_1[1]
-av_train01_1[0] = 0.5
-av_test01_1[0] = 0.5
-
 factor = calibrate (betas_1, av_bcetrain_1, av_train01_1, samplesize_1)
 
 
@@ -286,12 +275,6 @@ if boundtype == 1:
 
 print (betas_2)
 
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_2[0] = av_bcetest_2[1]
-av_train01_2[0] = 0.5
-av_test01_2[0] = 0.5
-
 factor = calibrate (betas_2, av_bcetrain_2, av_train01_2, samplesize_2)
 
 
@@ -320,12 +303,6 @@ if boundtype == 1:
     bt = ' Hoeffding'
 
 print (betas_3)
-
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_3[0] = av_bcetest_3[1]
-av_train01_3[0] = 0.5
-av_test01_3[0] = 0.5
 
 factor = calibrate (betas_3, av_bcetrain_3, av_train01_3, samplesize_3)
 
@@ -414,3 +391,72 @@ print('Architecture 3: CCLVW1000SGLD8kLR0005BBCE (VGG-16)')
 print('Test: Actual test error (0-1 loss)')
 print('Bound: Generalization bound prediction')
 print('='*80)
+
+# Generate LaTeX table
+print('\n\nLaTeX Table:')
+print('='*60)
+
+# Find indices for beta = 1000 and beta = 64000
+beta_1000_idx = None
+beta_64000_idx = None
+for i, beta in enumerate(betas_1):
+    if beta == 1000.0:
+        beta_1000_idx = i
+    elif beta == 64000.0:
+        beta_64000_idx = i
+
+if beta_1000_idx is not None and beta_64000_idx is not None:
+    # Extract the required values
+    bound_1000_arch1 = bound_matrix[0][beta_1000_idx]
+    bound_1000_arch2 = bound_matrix[1][beta_1000_idx]
+    bound_1000_arch3 = bound_matrix[2][beta_1000_idx]
+    
+    test_64000_arch1 = test_matrix[0][beta_64000_idx]
+    test_64000_arch2 = test_matrix[1][beta_64000_idx]
+    test_64000_arch3 = test_matrix[2][beta_64000_idx]
+    
+    bound_64000_arch1 = bound_matrix[0][beta_64000_idx]
+    bound_64000_arch2 = bound_matrix[1][beta_64000_idx]
+    bound_64000_arch3 = bound_matrix[2][beta_64000_idx]
+    
+    # Generate LaTeX table
+    latex_table = f"""
+\\begin{{table}}[h]
+\\centering
+\\begin{{tabular}}{{|l|c|c|c|}}
+\\hline
+& Architecture 1 & Architecture 2 & Architecture 3 \\\\
+\\hline
+Bound at $\\beta = 1000$ & {bound_1000_arch1:.4f} & {bound_1000_arch2:.4f} & {bound_1000_arch3:.4f} \\\\
+\\hline
+Test Error at $\\beta = 64000$ & {test_64000_arch1:.4f} & {test_64000_arch2:.4f} & {test_64000_arch3:.4f} \\\\
+\\hline
+Bound at $\\beta = 64000$ & {bound_64000_arch1:.4f} & {bound_64000_arch2:.4f} & {bound_64000_arch3:.4f} \\\\
+\\hline
+\\end{{tabular}}
+\\caption{{Generalization bounds and test errors for different neural network architectures on CIFAR-10 dataset.}}
+\\label{{tab:cifar_results}}
+\\end{{table}}
+"""
+    
+    print(latex_table)
+    
+    # Save LaTeX table to file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    latex_file_path = os.path.join(script_dir, "cifar_results_table.tex")
+    
+    with open(latex_file_path, 'w') as f:
+        f.write(latex_table)
+    
+    print(f"LaTeX table saved to: {latex_file_path}")
+    
+    # Also print values for verification
+    print(f"\nExtracted values:")
+    print(f"Bound at beta=1000: Arch1={bound_1000_arch1:.4f}, Arch2={bound_1000_arch2:.4f}, Arch3={bound_1000_arch3:.4f}")
+    print(f"Test at beta=64000: Arch1={test_64000_arch1:.4f}, Arch2={test_64000_arch2:.4f}, Arch3={test_64000_arch3:.4f}")
+    print(f"Bound at beta=64000: Arch1={bound_64000_arch1:.4f}, Arch2={bound_64000_arch2:.4f}, Arch3={bound_64000_arch3:.4f}")
+    
+else:
+    print("Error: Could not find beta values 1000 or 64000 in the data")
+
+print('='*60)

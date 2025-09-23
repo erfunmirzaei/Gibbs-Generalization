@@ -310,6 +310,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             train_zero_one_total += zeroOne_val
             train_total += batch_y.size(0)
             train_correct += (predicted == batch_y).sum().item()
+            # TODO: Use the other approach to update EMA and check the difference
             EMA_train_BCE_losses.append(EMA_alpha_BCE *  bce_val  + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
             EMA_train_zero_one_losses.append( EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
             EMA_train_losses.append( EMA_alpha * bce_val + (1 - EMA_alpha) * EMA_train_losses[-1])

@@ -190,9 +190,9 @@ class LeNet5(nn.Module):
         self.conv3 = nn.Conv2d(16, 120, kernel_size=5, stride=1, padding=0)  # C5
         
         # Fully connected layers
-        self.fc1 = nn.Linear(120, 84)  # F6
-        self.fc2 = nn.Linear(84, num_classes)  # Output layer
-    
+        self.fc1 = nn.Linear(120, 84*5)  # F6
+        self.fc2 = nn.Linear(84*5, num_classes)  # Output layer
+
     def forward(self, x):
         if x.dim() == 2:
             # If input is flattened (batch_size, 784), reshape to (batch_size, 1, 28, 28)

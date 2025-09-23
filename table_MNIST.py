@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import csv
 import os
 import numpy as np
@@ -201,19 +199,17 @@ def predict01hoeffding (betas, av_bcetrain, av_train01, samplesize, factor):
         index = index + 1 
     return ps
 
-def calibrate (betas, av_bcetrain, av_train01, samplesize):
+def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
     l,r = 0.1,100
     factor = (l + r) / 2
     pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
-    pred[0] = pred[1]
     while (r-l > 0.01) or (minlist(pred) < 0.5):
-        if minlist (pred)  < 0.5:
+        if minlist (pred[1:])  < thresh:
             l = factor
-        if minlist (pred) >= 0.5:
+        if minlist (pred[1:]) >= thresh:
             r = factor
         factor = (l + r) / 2
         pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
-        pred[0] = pred[1]
     return factor
 
 
@@ -235,7 +231,7 @@ showkls = 0        # 0 = don't show, 1 = show
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename_1, randomfilename_1 = "MCL1W500SGLD2kLR001BBCE.csv", "MRL1W500SGLD2kLR001BBCE.csv"
+truefilename_1, randomfilename_1 =  "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE.csv"
 
 # for calibration load random data first
 betas_1, bcetrain_1, bcetest_1, train01_1, test01_1, av_bcetrain_1, av_bcetest_1,\
@@ -251,13 +247,7 @@ if boundtype == 1:
 
 print (betas_1)
 
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_1[0] = av_bcetest_1[1]
-av_train01_1[0] = 0.5
-av_test01_1[0] = 0.5
-
-factor = calibrate (betas_1, av_bcetrain_1, av_train01_1, samplesize_1)
+factor = calibrate (betas_1, av_bcetrain_1, av_train01_1, samplesize_1, thresh=0.5)
 
 
 if trueLabels == 1:   # then reload 
@@ -270,7 +260,7 @@ if trueLabels == 1:   # then reload
 print ('calibration factor =',factor)
 pred01_1 = predict01 (betas_1, av_bcetrain_1, av_train01_1, samplesize_1, factor)
 
-truefilename_2, randomfilename_2 = "MCL2W1000SGLD2kLR001BBCE.csv", "MRL2W1000SGLD2kLR001BBCE.csv"
+truefilename_2, randomfilename_2 = "MCL3W500SGLD8kLR001BBCE.csv", "MRL3W500SGLD8kLR001BBCE.csv"
 
 # for calibration load random data first
 betas_2, bcetrain_2, bcetest_2, train01_2, test01_2, av_bcetrain_2, av_bcetest_2,\
@@ -286,13 +276,7 @@ if boundtype == 1:
 
 print (betas_2)
 
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_2[0] = av_bcetest_2[1]
-av_train01_2[0] = 0.5
-av_test01_2[0] = 0.5
-
-factor = calibrate (betas_2, av_bcetrain_2, av_train01_2, samplesize_2)
+factor = calibrate (betas_2, av_bcetrain_2, av_train01_2, samplesize_2, thresh=0.5)
 
 
 if trueLabels == 1:   # then reload 
@@ -306,7 +290,7 @@ print ('calibration factor =',factor)
 pred01_2 = predict01 (betas_2, av_bcetrain_2, av_train01_2, samplesize_2, factor)
 
 
-truefilename_3, randomfilename_3 = "MCLLW2000SGLD2kLR0005BBCE.csv", "MRLLW2000SGLD2kLR0005BBCE.csv"
+truefilename_3, randomfilename_3 = "MCLLW500SGLD8kLR001BBCE.csv", "MRLLW500SGLD8kLR001BBCE.csv"
 
 # for calibration load random data first
 betas_3, bcetrain_3, bcetest_3, train01_3, test01_3, av_bcetrain_3, av_bcetest_3,\
@@ -322,13 +306,7 @@ if boundtype == 1:
 
 print (betas_3)
 
-# av_bcetrain[0]=0.5
-#av_bcetrain[0]=av_bcetrain[1]
-av_bcetest_3[0] = av_bcetest_3[1]
-av_train01_3[0] = 0.5
-av_test01_3[0] = 0.5
-
-factor = calibrate (betas_3, av_bcetrain_3, av_train01_3, samplesize_3)
+factor = calibrate (betas_3, av_bcetrain_3, av_train01_3, samplesize_3, thresh=0.51)
 
 
 if trueLabels == 1:   # then reload 
@@ -405,9 +383,9 @@ for j in range(len(betas_1)):
 
 print('='*80)
 print('\nLegend:')
-print('Architecture 1: MCL1W500SGLD2kLR001BBCE (1 hidden layer, 500 width)')
-print('Architecture 2: MCL2W1000SGLD2kLR001BBCE (2 hidden layers, 1000 width)')
-print('Architecture 3: MCLLW2000SGLD2kLR0005BBCE (LeNet5)')
+print('Architecture 1:MRL2W1000SGLD8kLR001BBCE (2 hidden layers, 1000 width)') 
+print('Architecture 2: MRL3W500SGLD8kLR001BBCE (3 hidden layers, 500 width)')
+print('Architecture 3: MRLLW500SGLD8kLR001BBCE (LeNet5)')
 print('Test: Actual test error (0-1 loss)')
 print('Bound: Generalization bound prediction')
 print('='*80)
@@ -416,28 +394,29 @@ print('='*80)
 print('\n\nLaTeX Table:')
 print('='*60)
 
-# Find indices for beta = 250 and beta = 16000
-beta_250_idx = None
-beta_16000_idx = None
+# Find indices for beta = 1000 and beta = 64000
+beta_1000_idx = None
+beta_64000_idx = None
 for i, beta in enumerate(betas_1):
-    if beta == 250.0:
-        beta_250_idx = i
-    elif beta == 16000.0:
-        beta_16000_idx = i
+    print(f"Index {i}: Beta = {beta}")
+    if beta == 1000.0:
+        beta_1000_idx = i
+    elif beta == 64000.0:
+        beta_64000_idx = i
 
-if beta_250_idx is not None and beta_16000_idx is not None:
+if beta_1000_idx is not None and beta_64000_idx is not None:
     # Extract the required values
-    bound_250_arch1 = bound_matrix[0][beta_250_idx]
-    bound_250_arch2 = bound_matrix[1][beta_250_idx]
-    bound_250_arch3 = bound_matrix[2][beta_250_idx]
+    bound_1000_arch1 = bound_matrix[0][beta_1000_idx]
+    bound_1000_arch2 = bound_matrix[1][beta_1000_idx]
+    bound_1000_arch3 = bound_matrix[2][beta_1000_idx]
+
+    test_64000_arch1 = test_matrix[0][beta_64000_idx]
+    test_64000_arch2 = test_matrix[1][beta_64000_idx]
+    test_64000_arch3 = test_matrix[2][beta_64000_idx]
     
-    test_16000_arch1 = test_matrix[0][beta_16000_idx]
-    test_16000_arch2 = test_matrix[1][beta_16000_idx]
-    test_16000_arch3 = test_matrix[2][beta_16000_idx]
-    
-    bound_16000_arch1 = bound_matrix[0][beta_16000_idx]
-    bound_16000_arch2 = bound_matrix[1][beta_16000_idx]
-    bound_16000_arch3 = bound_matrix[2][beta_16000_idx]
+    bound_64000_arch1 = bound_matrix[0][beta_64000_idx]
+    bound_64000_arch2 = bound_matrix[1][beta_64000_idx]
+    bound_64000_arch3 = bound_matrix[2][beta_64000_idx]
     
     # Generate LaTeX table
     latex_table = f"""
@@ -447,11 +426,11 @@ if beta_250_idx is not None and beta_16000_idx is not None:
 \\hline
 & Architecture 1 & Architecture 2 & Architecture 3 \\\\
 \\hline
-Bound at $\\beta = 250$ & {bound_250_arch1:.4f} & {bound_250_arch2:.4f} & {bound_250_arch3:.4f} \\\\
+Bound at $\\beta = 1000$ & {bound_1000_arch1:.4f} & {bound_1000_arch2:.4f} & {bound_1000_arch3:.4f} \\\\
 \\hline
-Test Error at $\\beta = 16000$ & {test_16000_arch1:.4f} & {test_16000_arch2:.4f} & {test_16000_arch3:.4f} \\\\
+Test Error at $\\beta = 64000$ & {test_64000_arch1:.4f} & {test_64000_arch2:.4f} & {test_64000_arch3:.4f} \\\\
 \\hline
-Bound at $\\beta = 16000$ & {bound_16000_arch1:.4f} & {bound_16000_arch2:.4f} & {bound_16000_arch3:.4f} \\\\
+Bound at $\\beta = 64000$ & {bound_64000_arch1:.4f} & {bound_64000_arch2:.4f} & {bound_64000_arch3:.4f} \\\\
 \\hline
 \\end{{tabular}}
 \\caption{{Generalization bounds and test errors for different neural network architectures on MNIST dataset.}}
@@ -472,11 +451,13 @@ Bound at $\\beta = 16000$ & {bound_16000_arch1:.4f} & {bound_16000_arch2:.4f} & 
     
     # Also print values for verification
     print(f"\nExtracted values:")
-    print(f"Bound at beta=250: Arch1={bound_250_arch1:.4f}, Arch2={bound_250_arch2:.4f}, Arch3={bound_250_arch3:.4f}")
-    print(f"Test at beta=16000: Arch1={test_16000_arch1:.4f}, Arch2={test_16000_arch2:.4f}, Arch3={test_16000_arch3:.4f}")
-    print(f"Bound at beta=16000: Arch1={bound_16000_arch1:.4f}, Arch2={bound_16000_arch2:.4f}, Arch3={bound_16000_arch3:.4f}")
+    print(f"Bound at beta=1000: Arch1={bound_1000_arch1:.4f}, Arch2={bound_1000_arch2:.4f}, Arch3={bound_1000_arch3:.4f}")
+    print(f"Test at beta=64000: Arch1={test_64000_arch1:.4f}, Arch2={test_64000_arch2:.4f}, Arch3={test_64000_arch3:.4f}")
+    print(f"Bound at beta=64000: Arch1={bound_64000_arch1:.4f}, Arch2={bound_64000_arch2:.4f}, Arch3={bound_64000_arch3:.4f}")
     
 else:
-    print("Error: Could not find beta values 250 or 16000 in the data")
+    print("Error: Could not find beta values 1000 or 64000 in the data")
+
+print('='*60)
 
 print('='*60)

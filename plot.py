@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import csv
 import os
 import numpy as np
@@ -148,7 +146,7 @@ def minlist (l):
 def integral ( betas, train, factor ):
 	u, s, index = [0], 0, 0
 	while ( len (u) < len ( betas ) ):
-		s = s + factor*(betas[index+1]-betas[index])*av_bcetrain[index]
+		s = s + factor*(betas[index+1]-betas[index])*train[index]
 		u.append(s)
 		index = index + 1
 	return u
@@ -159,7 +157,7 @@ def gammas ( betas, train, factor ):
 	index = 0
 	b = []
 	while ( len(b) < len(train) ):
-		b.append (int[index] - factor*betas[index]*av_bcetrain[index]) 
+		b.append (int[index] - factor*betas[index]*train[index]) 
 		index = index + 1
 	return b
 
@@ -201,14 +199,14 @@ def predict01hoeffding (betas, av_bcetrain, av_train01, samplesize, factor):
         index = index + 1 
     return ps
 
-def calibrate (betas, av_bcetrain, av_train01, samplesize):
+def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
     l,r = 0.1,100
     factor = (l + r) / 2
     pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
     while (r-l > 0.01) or (minlist(pred) < 0.5):
-        if minlist (pred[1:])  < 0.5:
+        if minlist (pred[1:])  < thresh:
             l = factor
-        if minlist (pred[1:]) >= 0.5:
+        if minlist (pred[1:]) >= thresh:
             r = factor
         factor = (l + r) / 2
         pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor)
@@ -222,7 +220,7 @@ trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
 calibration = 1    # 0 = no calibration 1 = do it
-singledraw = 1     # 0 = posterior average, 1 = single draw
+singledraw = 0     # 0 = posterior average, 1 = single draw
 # GET DATA
 # naming conventions: 
 # ( Dataset ) = M for MNIST, C for CIFAR
@@ -234,7 +232,7 @@ singledraw = 1     # 0 = posterior average, 1 = single draw
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename, randomfilename = "CCL2W2000SGLD8kLR0005BBCE.csv", "CRL2W2000SGLD8kLR0005BBCE.csv"
+truefilename, randomfilename = "MCLLW500SGLD8kLR001BBCE.csv", "MRLLW500SGLD8kLR001BBCE.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -407,7 +405,7 @@ def show01 (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.65])
+    ax.set_ylim([0, 0.6])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
