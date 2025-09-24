@@ -218,9 +218,9 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 display = 1       # 0 = BBCE, 1 = 01
 trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
-showkls = 0        # 0 = don't show, 1 = show
+showkls = 1        # 0 = don't show, 1 = show
 calibration = 1    # 0 = no calibration 1 = do it
-singledraw = 1     # 0 = posterior average, 1 = single draw
+singledraw = 0     # 0 = posterior average, 1 = single draw
 # GET DATA
 # naming conventions: 
 # ( Dataset ) = M for MNIST, C for CIFAR
@@ -340,6 +340,8 @@ def showbce (showkls):
             csv_filename = csv_filename + '_loss'
         if singledraw == 1:
             csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
         csv_filename = 'newplots/' + csv_filename + '.png'
     else:
         csv_filename = randomfilename[:-4]
@@ -349,6 +351,8 @@ def showbce (showkls):
             csv_filename = csv_filename + '_loss'
         if singledraw == 1:
             csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
         csv_filename = 'newplots/' + csv_filename + '.png'
 
     # Save with high quality
@@ -398,14 +402,12 @@ def show01 (showkls):
                 markersize=6, label='KL(Train,Test)', alpha=0.8)
         ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
                 markersize=6, label='KL-Bound', alpha=0.8)
-        ax.plot(betas[1:], bounds[1:], 'x-y', linewidth=2, 
-                markersize=6, label='kl-bound', alpha=0.8)
 
     
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.63])
+    ax.set_ylim([0, 0.65])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
@@ -428,6 +430,8 @@ def show01 (showkls):
             csv_filename = csv_filename + '_loss'
         if singledraw == 1:
             csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
         csv_filename = 'newplots/' + csv_filename + '.png'
     else:
         csv_filename = randomfilename[:-4]
@@ -437,6 +441,8 @@ def show01 (showkls):
             csv_filename = csv_filename + '_loss'
         if singledraw == 1:
             csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
         csv_filename = 'newplots/' + csv_filename + '.png'
 
     # Save with high quality

@@ -19,7 +19,7 @@ from training import run_beta_experiments
 TEST_MODE =  False
 
 # Random labels flag - set to True to use random labels
-USE_RANDOM_LABELS = False
+USE_RANDOM_LABELS = True
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
 DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
@@ -56,11 +56,11 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
-            beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
-            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
+            # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
+            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
-            a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
             # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
@@ -82,18 +82,18 @@ def main():
         if USE_RANDOM_LABELS:
             train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
                 classes=MNIST_CLASSES,
-                n_train_per_group=4000,
+                n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=100,
+                batch_size=50,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
         else:
             train_loader, test_loader = get_mnist_binary_dataloaders(
                 classes=MNIST_CLASSES,
-                n_train_per_group=4000,
+                n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=100,
+                batch_size=50,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
             )
@@ -139,7 +139,7 @@ def main():
         eps=1e-7,
         test_mode=TEST_MODE,
         add_grad_norm=False,
-        add_noise=False,  # If False, it becomes (S)GD
+        add_noise=True,  # If False, it becomes (S)GD
     )
     
     print(f"\n{'='*70}")
