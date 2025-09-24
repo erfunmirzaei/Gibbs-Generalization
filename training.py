@@ -4,8 +4,6 @@ Training and experiment orchestration for the Gibbs generalization bound experim
 This module contains functions for training models with SGLD and running
 experiments across different beta values with multiple repetitions.
 """
-import math
-import numpy as np
 import torch
 import torch.optim as optim
 import time
@@ -132,7 +130,7 @@ def get_a0_for_beta(beta, a0):
     else:
         raise ValueError(f"a0 must be int, float, dict, or callable, got {type(a0)}")
 
-def train_sgld_model(loss, model, train_loader, test_loader, min_epochs, 
+def train_sgld_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
                      beta, device, dataset_type,
                      l_max, alpha_average, alpha_stop,  eta, eps, add_grad_norm=False, add_noise=True):
@@ -148,7 +146,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
         model (nn.Module): Neural network model to train.
         train_loader (DataLoader): Training data loader.
         test_loader (DataLoader): Test data loader.
-        min_epochs (int): Minimum number of epochs to train before checking convergence.
+        min_steps (int): Minimum number of epochs to train before checking convergence.
         a0 (float): Initial learning rate.
         b (float): Learning rate decay exponent (lr_t = a0 * t^(-b)).
         sigma_gauss_prior (float): Standard deviation of Gaussian prior for weights.
@@ -160,12 +158,14 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
         alpha_stop (float): EMA smoothing factor for convergence detection.
         eta (float): Learning rate threshold parameter (lr >= eta/beta).
         eps (float): Convergence threshold for EMA training loss difference.
+        add_grad_norm (bool): Whether to track gradient norm EMA.
+        add_noise (bool): Whether to add Langevin noise during SGLD updates.
     
     Returns:
         tuple: Contains (train_losses, test_losses, train_accuracies, test_accuracies,
                train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, 
-               EMA_test_zero_one_losses).
+               EMA_test_zero_one_losses, EMA_grad_norm).
     """
     # Convert device to torch.device if it's a string
     if isinstance(device, str):
@@ -180,12 +180,12 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
     else:
-        criterion = BCEWithLogitsLoss()  # Use standard BCE for SGLD optimization
+        criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
 
-    # Check if we're using BCE for optimization (to determine if transformation is needed)
-    using_bce_for_optimization = isinstance(criterion, BoundedCrossEntropyLoss)
-    
+    # Check if we're using BBCE for optimization (to determine if transformation is needed)
+    using_bbce_for_optimization = isinstance(criterion, BoundedCrossEntropyLoss)
+
     # Initialize SGLD optimizer with inverse temperature
     optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
                      beta=beta, add_noise=add_noise)
@@ -239,7 +239,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                 batch_x, batch_y = next(iter(train_loader))
                 outputs = model_cpu(batch_x)
                 loss = criterion(outputs.squeeze(), batch_y)
-                if using_bce_for_optimization:
+                if using_bbce_for_optimization:
                     loss = transform_bce_to_unit_interval(loss, l_max)
                 train_loss_total += loss.item()
                 zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
@@ -252,7 +252,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                 batch_x, batch_y = next(iter(test_loader))
                 outputs = model_cpu(batch_x)
                 loss = criterion(outputs.squeeze(), batch_y)
-                if using_bce_for_optimization:
+                if using_bbce_for_optimization:
                     loss = transform_bce_to_unit_interval(loss, l_max)
                 test_loss_total += loss.item()
                 zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
@@ -270,7 +270,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                 f'EMA Train Zero-One Loss: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test Zero-One Loss: {EMA_test_zero_one_losses[-1]:.4f}'
                 )
 
-    while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_epochs / len(train_loader)) and beta > 0.0:
+    while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_steps / len(train_loader)) and beta > 0.0:
         # Training phase
         model.train()
         train_loss_total = 0.0
@@ -290,7 +290,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             outputs = model(batch_x)
              
             loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-            if using_bce_for_optimization:
+            if using_bbce_for_optimization:
                 loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
             else:
                 loss_for_recording = loss_for_optimization
@@ -344,7 +344,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
                 loss_for_optimization = criterion(outputs.squeeze(), batch_y)
                 # if math.isnan(loss_for_optimization.item()):
                 #     raise ValueError("Loss is NaN")
-                if using_bce_for_optimization:
+                if using_bbce_for_optimization:
                     loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
                 else:
                     loss_for_recording = loss_for_optimization
@@ -402,7 +402,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_epochs,
             EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm)
 
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
-                         dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_epochs,
+                         dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_steps,
                          alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, add_noise=True, save_every=1):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
@@ -425,11 +425,14 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         l_max (float): Maximum loss value for bounded transformation.
         train_loader (DataLoader): Training data loader.
         test_loader (DataLoader): Test data loader.
-        min_epochs (int): Minimum number of epochs to train before checking convergence.
+        min_steps (int): Minimum number of epochs to train before checking convergence.
         alpha_average (float): EMA smoothing factor for loss averaging.
         alpha_stop (float): EMA smoothing factor for convergence detection.
         eta (float): Learning rate threshold parameter.
         eps (float): Convergence threshold for EMA training loss difference.
+        test_mode (bool, optional): If True, runs a quick test with fewer epochs. Defaults to False.
+        add_grad_norm (bool, optional): Whether to track gradient norm EMA. Defaults to False.
+        add_noise (bool, optional): Whether to add Langevin noise during SGLD updates. Defaults to True.
         save_every (int, optional): Save checkpoint frequency. Defaults to 1.
     
     Returns:
@@ -465,10 +468,11 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         current_a0 = get_a0_for_beta(beta, a0)
         print(f"  Beta {beta}: {current_a0}")
     print(f"Save frequency: every {save_every} repetitions")
+    print(f"{'='*80}")        
     
-
-    print(f"{'='*80}")
-    
+    if add_noise == False:
+        extended_beta_values = [extended_beta_values[-1]]  
+        
     betas_experimented = []
     # Run all beta values for this repetition
     for beta in sorted(extended_beta_values):
@@ -505,7 +509,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             model=model,
             train_loader=train_loader,
             test_loader=test_loader,
-            min_epochs=min_epochs,
+            min_steps=min_steps,
             a0=current_a0,
             b=b,
             sigma_gauss_prior=sigma_gauss_prior,
@@ -585,7 +589,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - Random labels: {use_random_labels}\n" \
         f"  - Training set size: {len(train_loader.dataset) if train_loader else 'N/A'}\n" \
         f"  - Test set size: {len(test_loader.dataset) if test_loader else 'N/A'}\n" \
-        f"  - Minimum epochs: {min_epochs}\n" \
+        f"  - Minimum epochs: {min_steps}\n" \
         f"  - Number of Batches: {len(train_loader) if train_loader else 'N/A'}\n" \
         f"  - Beta values: {sorted(betas_experimented)}\n" \
         f"  - Learning rate (a0): {current_a0}\n" \

@@ -245,13 +245,13 @@ class VGG16_CIFAR(nn.Module):
         # After conv/pool, feature map size is reduced; with CIFAR10 32×32 → after 5 pools of stride 2 you get 1x1 
         # (but often fewer pools are used; here I'll do 5 pools to match original VGG)
         self.classifier = nn.Sequential(
-            nn.Linear(512, 4096),
+            nn.Linear(512, 1024),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
-            nn.Linear(4096, 4096),
+            # nn.Dropout(p=0.5),
+            nn.Linear(1024, 1024),
             nn.ReLU(inplace=True),
-            nn.Dropout(p=0.5),
-            nn.Linear(4096, num_classes)
+            # nn.Dropout(p=0.5),
+            nn.Linear(1024, num_classes)
         )
 
     def forward(self, x):

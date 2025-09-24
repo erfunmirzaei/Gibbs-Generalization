@@ -220,7 +220,7 @@ trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
 calibration = 1    # 0 = no calibration 1 = do it
-singledraw = 0     # 0 = posterior average, 1 = single draw
+singledraw = 1     # 0 = posterior average, 1 = single draw
 # GET DATA
 # naming conventions: 
 # ( Dataset ) = M for MNIST, C for CIFAR
@@ -232,7 +232,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename, randomfilename = "MCLLW500SGLD8kLR001BBCE.csv", "MRLLW500SGLD8kLR001BBCE.csv"
+truefilename, randomfilename = "CCL2W1500SGLD8kLR0005BBCE.csv", "CRL2W1500SGLD8kLR0005BBCE.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -249,7 +249,7 @@ if boundtype == 1:
 print (betas)
 
 if calibration == 1:
-    factor = calibrate (betas, av_bcetrain, av_train01, samplesize)
+    factor = calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.50)
 else:
     factor = 1
 
@@ -405,7 +405,7 @@ def show01 (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.6])
+    ax.set_ylim([0, 0.63])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 

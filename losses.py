@@ -1,8 +1,8 @@
 """
 Loss functions for the Gibbs generalization bound experiments.
 
-This module contains loss function implementations used in the SGLD experiments,
-including bounded cross-entropy loss and zero-one loss.
+This module contains loss function implementations used in the SGLD experiments
+and for evaluating model performance.
 """
 import torch
 import torch.nn as nn

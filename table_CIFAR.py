@@ -231,7 +231,7 @@ showkls = 0        # 0 = don't show, 1 = show
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename_1, randomfilename_1 = "CCL2W2000SGLD8kLR0005BBCE.csv", "CRL2W2000SGLD8kLR0005BBCE.csv"
+truefilename_1, randomfilename_1 = "CCL2W1500SGLD8kLR0005BBCE.csv", "CRL2W1500SGLD8kLR0005BBCE.csv"
 
 # for calibration load random data first
 betas_1, bcetrain_1, bcetest_1, train01_1, test01_1, av_bcetrain_1, av_bcetest_1,\
@@ -385,7 +385,7 @@ for j in range(len(betas_1)):
 
 print('='*80)
 print('\nLegend:')
-print('Architecture 1: CCL2W2000SGLD8kLR0005BBCE (2 hidden layers, 2000 width)')
+print('Architecture 1: CCL2W1500SGLD8kLR0005BBCE (2 hidden layers, 1500 width)')
 print('Architecture 2: CCL3W1000SGLD8kLR0005BBCE (3 hidden layers, 1000 width)')
 print('Architecture 3: CCLVW1000SGLD8kLR0005BBCE (VGG-16)')
 print('Test: Actual test error (0-1 loss)')

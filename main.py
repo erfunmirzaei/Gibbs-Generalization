@@ -1,39 +1,25 @@
 """
-Main experim# Test mode flag - set to False for full experiment
+Main experiment script for the Gibbs generalization bound experiments.
+
+# Test mode flag - set to False for full experiment
 TEST_MODE = True
 
-# Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = Falsecript for the Gibbs generalization bound experiments.
+# Random labels flag - set to True to use random labels
+USE_RANDOM_LABELS = False
 
-This script orchestrates the complete SGLD experiment, testing different beta values
-and computing PAC-Bayesian generalization bounds for the SYNTH dataset.
+This script orchestrates the complete ULA or SGLD experiment, testing different beta values
+and computing PAC-Bayesian generalization bounds for the MNIST or CIFAR-10 datasets.
 """
 
-from dataset import (get_synth_dataloaders, get_synth_dataloaders_random_labels,
-                    get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels,
+from dataset import (get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels,
                     get_cifar10_binary_dataloaders, get_cifar10_binary_dataloaders_random_labels)
 from training import run_beta_experiments
-
-# Questions: 
-# 1. Bounded loss function: Could relax it by decreasing the prior variance (sigma). what is the role of prior.
-# 2. Why for SGLD we don't see the shift anymore? At least not as strong as ULA.
-# 3. For deeper networks, the plot looks different - why? We are visiting a phase transition?
-#  finally, the bounds are working without any calibration. I guess this is excellent news for the paper, and also, it is very interesting to think about why making the neural net deeper and more overparametrized has such an effect.
-# 4. What is the the role of stopping criterion to be close or far from the optimum?
-# 5. Why the upper bound on random labels will be the upper bound on true labels?
-# TODO: Future: 
-# 0. 1 hidden layer with 1000 units for MNIST
-# 1. Savage loss, ULA/SGLD?, 1L/2L?, n=2k/8k? 
-
-# 2. Burn-in phase with larger lr and then SGLD with smaller learning rate 
-# 3. SGLD with scheduler
-# 4. CIFAR-10 binary classification
 
 # Test mode flag - set to False for full experiment
 TEST_MODE =  False
 
-# Random labels flag - set to True to use random labels instead of linear relationship
-USE_RANDOM_LABELS = True
+# Random labels flag - set to True to use random labels
+USE_RANDOM_LABELS = False
 
 # Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
 DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
@@ -52,9 +38,7 @@ CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 
 def main():
     """Main experiment function."""
-    # GPU diagnostic and setup
-    # device = 'cuda:5'
-    device = 'cpu'  # Force CPU for compatibility in this environment
+    device = 'cpu'  # cuda:5
     # Define beta values to test
     if TEST_MODE:
         print("\n" + "="*50)
@@ -63,28 +47,25 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            # MNIST needs fewer epochs typically - FAST TEST MODE
             beta_values = [2000]  # Minimal set for testing
             a0 = {0: 0.01, 2000: 0.01}
         
         elif DATASET_TYPE == 'cifar10':
-            # CIFAR-10 needs fewer epochs typically - FAST TEST MODE
             beta_values = [16000]  # Minimal set for testing
-            a0 = {0: 1e-10, 16000: 0.01}
+            a0 = {0: 0.01, 16000: 0.01}
         
     else:
         if DATASET_TYPE == 'mnist':
             # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
             beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
-            # a0 = {0: 1e-10, 125:0.2, 250: 0.1, 500: 0.05, 1000: 0.025, 2000: 0.0125, 4000: 0.00625, 8000: 0.003125, 16000: 0.0015625}
             # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
-            a0 = {0: 1e-10,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
             # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
-            beta_values = [ 32000, 64000]  # Extended MNIST experiment, n = 8k
-            # a0 = {0: 1e-10, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
+            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
             a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
@@ -141,18 +122,24 @@ def main():
         loss = 'BBCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
-        b=0.5,
+        b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
         sigma_gauss_prior=5,
         device=device,
-        n_hidden_layers=2,  # 1 or 2 hidden layers
-        width=1500,
+        n_hidden_layers='V',  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
+        width=500, # Width of each hidden layer, only for fully connected networks
         dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
         train_loader=train_loader, 
         test_loader=test_loader,
-        min_epochs = 4000,
-        alpha_average= 0.01, alpha_stop=0.00025, eta=0.1, eps=1e-7,test_mode = TEST_MODE, add_grad_norm = False, add_noise = True
+        min_steps=4000,
+        alpha_average=0.01,
+        alpha_stop=0.00025,
+        eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
+        eps=1e-7,
+        test_mode=TEST_MODE,
+        add_grad_norm=False,
+        add_noise=False,  # If False, it becomes (S)GD
     )
     
     print(f"\n{'='*70}")
