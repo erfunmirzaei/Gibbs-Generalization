@@ -250,7 +250,7 @@ class VGG16_CIFAR(nn.Module):
             # nn.Dropout(p=0.5),
             nn.Linear(1024, 1024),
             nn.ReLU(inplace=True),
-            # nn.Dropout(p=0.5),
+            # nn.Dropout(p=0.5), # Dropout is avoided since we want to use SGLD which minimizes the defined energy function without any additional regularization
             nn.Linear(1024, num_classes)
         )
 

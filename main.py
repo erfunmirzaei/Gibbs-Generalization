@@ -1,12 +1,6 @@
 """
 Main experiment script for the Gibbs generalization bound experiments.
 
-# Test mode flag - set to False for full experiment
-TEST_MODE = True
-
-# Random labels flag - set to True to use random labels
-USE_RANDOM_LABELS = False
-
 This script orchestrates the complete ULA or SGLD experiment, testing different beta values
 and computing PAC-Bayesian generalization bounds for the MNIST or CIFAR-10 datasets.
 """
@@ -15,13 +9,9 @@ from dataset import (get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_
                     get_cifar10_binary_dataloaders, get_cifar10_binary_dataloaders_random_labels)
 from training import run_beta_experiments
 
-# Test mode flag - set to False for full experiment
-TEST_MODE =  False
-
-# Random labels flag - set to True to use random labels
-USE_RANDOM_LABELS = True
-
-# Dataset selection - set to 'mnist' for MNIST binary classification or 'cifar10' for CIFAR-10 binary classification
+# Configuration flags
+TEST_MODE = False  # Set to True for quick test, False for full experiment
+USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
 DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')

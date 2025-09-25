@@ -7,7 +7,6 @@ experiments across different beta values with multiple repetitions.
 import torch
 import torch.optim as optim
 import time
-import json
 import os
 import csv
 from datetime import datetime
