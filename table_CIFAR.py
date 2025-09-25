@@ -288,7 +288,7 @@ if trueLabels == 1:   # then reload
 print ('calibration factor =',factor)
 pred01_2 = predict01 (betas_2, av_bcetrain_2, av_train01_2, samplesize_2, factor)
 
-truefilename_3, randomfilename_3 = "CCLVW1000SGLD8kLR0005BBCE.csv", "CRLVW1000SGLD8kLR0005BBCE.csv"
+truefilename_3, randomfilename_3 = "CCLVW500SGLD8kLR0005BBCE.csv", "CRLVW500SGLD8kLR0005BBCE.csv"
 
 # for calibration load random data first
 betas_3, bcetrain_3, bcetest_3, train01_3, test01_3, av_bcetrain_3, av_bcetest_3,\
@@ -387,7 +387,7 @@ print('='*80)
 print('\nLegend:')
 print('Architecture 1: CCL2W1500SGLD8kLR0005BBCE (2 hidden layers, 1500 width)')
 print('Architecture 2: CCL3W1000SGLD8kLR0005BBCE (3 hidden layers, 1000 width)')
-print('Architecture 3: CCLVW1000SGLD8kLR0005BBCE (VGG-16)')
+print('Architecture 3: CCLVW500SGLD8kLR0005BBCE (VGG-16)')
 print('Test: Actual test error (0-1 loss)')
 print('Bound: Generalization bound prediction')
 print('='*80)

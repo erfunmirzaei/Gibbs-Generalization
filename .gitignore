@@ -1,7 +1,5 @@
 # Results and data directories
-results/
 data/
-csv_outputs/
 
 # Python cache files
 *.pyc
@@ -9,16 +7,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# CSV files
-*.csv
-
-# Generated data files
-output_label_data.py
-example_data_analysis.py
-
-# Configuration files
-config_paths.py
 
 # Documentation files
 README_csv_setup.md
@@ -88,14 +76,6 @@ Desktop.ini
 *.log
 
 # Model checkpoints
-newplots/
-plots/
-read_csv_2_lists.py
-hmc.py
 *.pth
 *.ckpt
 *.h5
-
-*test*
-*demo*
-*analysis*

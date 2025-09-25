@@ -1,0 +1,16 @@
+Sample_size,Beta,BCE_Train,BCE_Test,0-1_Train,0-1_Test,EMA_BCE_Train,EMA_BCE_Test,EMA_0-1_Train,EMA_0-1_Test
+2000,0.0,3951.804931640625,3752.6884765625,0.48350000381469727,0.49900001287460327,5170.605870554513,4962.688853610879,0.49922102758919296,0.49420078739024637
+2000,2,373.6160888671875,709.3760986328125,0.38499999046325684,0.5120000243186951,352.81091001619666,607.2181565392622,0.3884966854877312,0.501275906005229
+
+Summary:,"The LMC has been run with the following parameters:
+  - Dataset type: mnist
+  - Random labels: True
+  - Beta values: [0.0, 2]
+  - Repetitions: 1
+  - Learning rate (a0): 0.01
+  - Learning rate decay (b): 0.5
+  - Gaussian prior sigma: 5
+ -  alpha: 0.00025
+ -  eta: 0.1
+ -  eps: 1e-07
+"
