@@ -122,69 +122,6 @@ Generated plots are saved in `newplots/` with corresponding names:
 python main.py
 ```
 
-### Configuration Options
-Edit `main.py` to customize experiments:
-
-```python
-# Basic configuration flags
-TEST_MODE = False           # Set True for quick testing, False for full experiment
-USE_RANDOM_LABELS = True    # Set True for random label experiments  
-DATASET_TYPE = 'cifar10'    # Choose 'mnist' or 'cifar10'
-
-# Class selection for binary classification
-MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
-CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
-
-# Beta values (inverse temperature parameter)
-beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]
-```
-
-### Individual Components Usage
-```python
-# Dataset creation
-from dataset import get_mnist_binary_dataloaders, get_cifar10_binary_dataloaders
-
-train_loader, test_loader = get_mnist_binary_dataloaders(
-    classes=[[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]],  # Even vs odd
-    n_train_per_group=1000,
-    batch_size=50
-)
-
-# Model initialization  
-from models import FCN2L, VGG16_CIFAR
-model = FCN2L(input_dim=784, hidden_dim=1000)  # For MNIST
-model = VGG16_CIFAR()  # For CIFAR-10
-
-# SGLD optimizer
-from sgld import SGLD
-optimizer = SGLD(model.parameters(), lr=0.01, beta=1000.0, add_noise=True)
-
-# Loss functions
-from losses import BoundedCrossEntropyLoss, SavageLoss
-criterion = BoundedCrossEntropyLoss(ell_max=4.0)
-```
-
-### Generate Results Tables and Plots
-```python
-# For MNIST results
-python table_MNIST.py
-
-# For CIFAR-10 results  
-python table_CIFAR.py
-```
-
-## Key Features
-
-1. **Comprehensive Datasets**: Support for both MNIST and CIFAR-10 with flexible class groupings
-2. **Multiple Architectures**: FCN (1-3 layers), LeNet-5, and VGG-16 implementations
-3. **Advanced Optimization**: SGLD, ULA, and SGD with configurable noise injection
-4. **Multiple Loss Functions**: BBCE, Savage, Tangent losses for robust PAC-Bayesian analysis  
-5. **Random Label Experiments**: Built-in support for generalization studies with random labels
-6. **PAC-Bayesian Bounds**: Complete implementation of KL-divergence based generalization bounds
-7. **Automatic Result Management**: CSV export, plot generation, and organized file naming
-8. **EMA Tracking**: Exponential Moving Average tracking for stable convergence assessment
-9. **Configurable Experiments**: Test mode for quick validation, full mode for publication results
-
 ## Algorithm and Parameter Guide
 
 ### Beta (β) Parameter - Inverse Temperature
@@ -203,30 +140,6 @@ python table_CIFAR.py
 - **Savage Loss**: Robust alternative with different theoretical properties
 - **Tangent Loss**: Additional robust loss option
 
-## Experiment Configuration Guide
-
-### Test vs Full Mode
-Configure experiments by modifying flags in `main.py`:
-
-```python
-TEST_MODE = False  # True: Quick test (single β), False: Full experiment (8 β values)
-USE_RANDOM_LABELS = True   # True: Random labels, False: Correct labels
-DATASET_TYPE = 'cifar10'   # 'mnist' or 'cifar10'
-```
-
-### Typical Experimental Setup
-
-**MNIST Experiments:**
-- Binary classification: Even digits vs Odd digits
-- Network: 2-layer FCN with width 1000  
-- Training samples: 2000 (1000 per class)
-- β values: [125, 250, 500, 1000, 2000, 4000, 8000, 16000]
-
-**CIFAR-10 Experiments:**
-- Binary classification: Vehicles vs Animals
-- Network: VGG-16 or 3-layer FCN with width 500
-- Training samples: 8000 (4000 per class)  
-- β values: [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]
 
 ## Installation and Dependencies
 
@@ -270,7 +183,7 @@ All outputs use consistent naming conventions encoding:
 - **Automated Outputs**: No manual file management required
 
 ### Result Verification
-Use `table_MNIST.py` and `table_CIFAR.py` to:
+Use `table_MNIST.py` and `table_CIFAR.py` and `plot.py` to:
 - Load and validate experimental results
 - Generate publication-ready tables  
 - Create comparative visualizations
