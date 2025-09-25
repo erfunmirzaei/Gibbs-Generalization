@@ -29,7 +29,7 @@ The code has been organized into the following modules for better maintainabilit
   - Configurable noise injection and step size scheduling
 
 - **`losses.py`** - Loss functions for PAC-Bayesian analysis
-  - `BoundedCrossEntropyLoss` - Bounded cross-entropy loss (BBCE) for generalization bounds
+  - `BoundedCrossEntropyLoss` - Bounded cross-entropy loss (BBCE) 
   - `ZeroOneLoss` - Zero-one loss for classification error evaluation  
   - `TangentLoss` - Tangent loss implementation
   - `SavageLoss` - Savage loss for robust learning
@@ -58,8 +58,7 @@ The code has been organized into the following modules for better maintainabilit
 
 - **`table_MNIST.py`** - MNIST results analysis and table generation
   - Processes experimental results from CSV files
-  - Generates publication-ready tables and plots
-  - Computes and displays PAC-Bayesian bounds
+  - Generates publication-ready tables 
 
 - **`table_CIFAR.py`** - CIFAR-10 results analysis and table generation  
   - Similar functionality to table_MNIST.py but for CIFAR-10 experiments
@@ -189,15 +188,15 @@ python table_CIFAR.py
 ## Algorithm and Parameter Guide
 
 ### Beta (β) Parameter - Inverse Temperature
-- **β = 0**: Pure gradient descent (deterministic, no noise injection)
+- **β = 0**: Sampling from the prior 
 - **β > 0**: SGLD with decreasing noise as β increases
 - **Higher β**: Less exploration, more exploitation (approaches deterministic optimization)
 - **Lower β**: More exploration, better generalization (at cost of training accuracy)
 
 ### Supported Algorithms
 - **SGLD**: Stochastic Gradient Langevin Dynamics with Gaussian noise injection
-- **ULA**: Unadjusted Langevin Algorithm (continuous-time limit of SGLD)  
-- **SGD**: Standard Stochastic Gradient Descent (β → ∞ limit)
+- **ULA**: Unadjusted Langevin Algorithm (Using full gradient instead of mini-batches)
+- **SGD**: Standard Stochastic Gradient Descent 
 
 ### Loss Functions for PAC-Bayesian Analysis
 - **BBCE (Bounded Binary Cross Entropy)**: Primary loss for generalization bounds [0,1] bounded
@@ -255,45 +254,6 @@ This implementation is based on the following key papers:
 
 1. **SGLD Algorithm**: Welling, M., & Teh, Y. W. (2011). Bayesian learning via stochastic gradient Langevin dynamics. *Proceedings of the 28th International Conference on Machine Learning (ICML-11)*, 681-688.
 
-2. **PAC-Bayesian Theory**: McAllester, D. A. (1999). PAC-Bayesian model averaging. *Proceedings of the 12th Annual Conference on Computational Learning Theory*, 164-170.
-
-3. **Generalization Bounds**: Catoni, O. (2007). *PAC-Bayesian supervised classification: the thermodynamics of statistical learning*. Institute of Mathematical Statistics.
-
-### Theoretical Framework
-The experiments implement PAC-Bayesian generalization bounds of the form:
-
-```
-P(R(h) ≤ R̂(h) + √((KL(Q||P) + ln(2√n/δ))/(2n))) ≥ 1-δ
-```
-
-Where:
-- `R(h)`: True generalization error
-- `R̂(h)`: Empirical training error  
-- `KL(Q||P)`: KL divergence between posterior Q and prior P
-- `n`: Sample size, `δ`: Confidence parameter
-
-## Mathematical Details
-
-### Beta=0 Baseline and Bounds Computation
-The PAC-Bayesian generalization bound computation requires a baseline at β=0 (pure SGD):
-
-- **Automatic β=0 inclusion**: `run_beta_experiments()` automatically adds β=0 when not specified
-- **Integral approximation**: Bounds computed using trapezoidal rule from β=0 to target β
-- **Mathematical correctness**: Ensures proper KL-divergence computation for generalization bounds
-
-### Bound Computation Process
-1. Train models at β=0 (SGD) and target β values (SGLD/ULA)
-2. Compute empirical losses and KL divergences between posterior and prior
-3. Apply PAC-Bayesian bound formula with confidence parameter δ
-4. Generate bounds that hold with probability ≥ 1-δ
-
-### EMA (Exponential Moving Average) Tracking
-Stable loss estimation using EMA with decay factor α:
-```
-EMA_t = α × loss_t + (1-α) × EMA_{t-1}
-```
-Default α = 0.01 for stable convergence assessment.
-
 ## File Organization and Reproducibility
 
 ### Systematic File Naming
@@ -332,18 +292,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Citation
 
-If you use this code in your research, please cite the original SGLD paper:
+If you use this code in your research, please cite our work:
 
-```bibtex
-@inproceedings{welling2011bayesian,
-  title={Bayesian learning via stochastic gradient Langevin dynamics},
-  author={Welling, Max and Teh, Yee Whye},
-  booktitle={Proceedings of the 28th international conference on machine learning (ICML-11)},
-  pages={681--688},
-  year={2011}
-}
-```
-
+TBD - Add citation details here when available.
 ## Contact
 
 For questions about the implementation or to report issues, please open an issue in the repository.
