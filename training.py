@@ -223,37 +223,48 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     epoch = 0
     # if beta == I have to sample from the prior many times and take the average both for train and test losses
     if beta == 0.0:
-        num_prior_samples = 1000
+        num_prior_samples = 5000
 
         model_cpu = model.to('cpu')
         for i in range(num_prior_samples):
             learning_rates.append(0.0)  # No learning rate for beta=0 prior sampling
+            optimizer.zero_grad(set_to_none=True)
             # Reinitialize model weights from prior
-            initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=i)
+            model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
             # Compute train loss
-            model_cpu.eval()
-            with torch.no_grad():
-                train_loss_total = 0.0
-                zero_one_loss_total = 0.0
-                batch_x, batch_y = next(iter(train_loader))
-                outputs = model_cpu(batch_x)
-                loss = criterion(outputs.squeeze(), batch_y)
-                if using_bbce_for_optimization:
-                    loss = transform_bce_to_unit_interval(loss, l_max)
-                train_loss_total += loss.item()
-                zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
-                train_zero_one_losses.append(zero_one_loss_total )
-                train_losses.append(train_loss_total)
+            # with torch.no_grad():
+            train_loss_total = 0.0
+            zero_one_loss_total = 0.0
+            batch_x, batch_y = next(iter(train_loader))
+            outputs = model_cpu(batch_x)
+            loss_for_optimization = criterion(outputs.squeeze(), batch_y)
+            if using_bbce_for_optimization:
+                loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
+            else:
+                loss_for_recording = loss_for_optimization
+            train_loss_total += loss_for_recording.item()
 
-                # Compute test loss
-                test_loss_total = 0.0
-                zero_one_loss_total = 0.0
+            loss_for_optimization.backward()
+            if add_grad_norm:
+                grad_norm = torch.nn.utils.clip_grad_norm_(model_cpu.parameters(), float("inf"), norm_type=2).item()
+                EMA_grad_norm.append(EMA_alpha * grad_norm + (1 - EMA_alpha) * EMA_grad_norm[-1])
+            zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
+            train_zero_one_losses.append(zero_one_loss_total )
+            train_losses.append(train_loss_total)
+
+            # Compute test loss
+            test_loss_total = 0.0
+            zero_one_loss_total = 0.0
+            with torch.no_grad():
                 batch_x, batch_y = next(iter(test_loader))
                 outputs = model_cpu(batch_x)
-                loss = criterion(outputs.squeeze(), batch_y)
+                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
                 if using_bbce_for_optimization:
-                    loss = transform_bce_to_unit_interval(loss, l_max)
-                test_loss_total += loss.item()
+                    loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
+                else:
+                    loss_for_recording = loss_for_optimization
+
+                test_loss_total += loss_for_recording.item()
                 zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
                 test_losses.append(test_loss_total)
                 test_zero_one_losses.append(zero_one_loss_total)
@@ -265,6 +276,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             epoch += 1
             print(f'Beta=0.0: Averaged over {num_prior_samples} prior samples - '
                 f'Train Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, '
+                f'EMA grad norm: {EMA_grad_norm[-1]:.4f}, '
+                f'grad norm: {grad_norm:.4f}, '
                 f'EMA Train Loss: {EMA_train_BCE_losses[-1]:.4f}, EMA Test Loss: {EMA_test_BCE_losses[-1]:.4f}, '
                 f'EMA Train Zero-One Loss: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test Zero-One Loss: {EMA_test_zero_one_losses[-1]:.4f}'
                 )
@@ -288,22 +301,17 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             # Standard precision training
             outputs = model(batch_x)
              
-            loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-            if using_bbce_for_optimization:
-                loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
-            else:
-                loss_for_recording = loss_for_optimization
+            loss_fn = criterion(outputs.squeeze(), batch_y)
             predicted = (outputs.squeeze() > 0).float()
             zero_one_loss = zero_one_criterion(outputs, batch_y)
-            
-            loss_for_optimization.backward()
+
+            loss_fn.backward()
             optimizer.step()
             
-            # Record the loss (transformed if BCE was used for optimization, raw otherwise)
             if add_grad_norm:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf")).item()
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
                 EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
-            bce_val = loss_for_recording.item()
+            bce_val = loss_fn.item()
             zeroOne_val = zero_one_loss.item()
             train_loss_total += bce_val
             train_zero_one_total += zeroOne_val
@@ -339,18 +347,12 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 batch_y = batch_y.to(device, non_blocking=True)
                 
                 outputs = model(batch_x)
-                
-                loss_for_optimization = criterion(outputs.squeeze(), batch_y)
-                # if math.isnan(loss_for_optimization.item()):
-                #     raise ValueError("Loss is NaN")
-                if using_bbce_for_optimization:
-                    loss_for_recording = transform_bce_to_unit_interval(loss_for_optimization, l_max)
-                else:
-                    loss_for_recording = loss_for_optimization
+
+                loss_fn = criterion(outputs.squeeze(), batch_y)
                 predicted = (outputs.squeeze() > 0).float()
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
-                
-                bce_val = loss_for_recording.item()
+
+                bce_val = loss_fn.item()
                 zeroOne_val = zero_one_loss.item()
                 test_loss_total += bce_val
                 test_zero_one_total += zeroOne_val

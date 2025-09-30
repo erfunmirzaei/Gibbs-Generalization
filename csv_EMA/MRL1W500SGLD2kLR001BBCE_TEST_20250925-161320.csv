@@ -1,0 +1,27 @@
+Sample_size,Beta,BCE_Train,BCE_Test,0-1_Train,0-1_Test,EMA_BCE_Train,EMA_BCE_Test,EMA_0-1_Train,EMA_0-1_Test
+2000,0.0,0.5600000023841858,0.5600000023841858,0.5600000023841858,0.5600000023841858,0.5040645994199185,0.5262031484439754,0.5040820438071861,0.5261932301195771
+2000,1000,0.21899800486862658,0.4088726466407581,0.30150000415742395,0.4981276666631504,0.2186160543711708,0.4281239570585019,0.2781475294284573,0.5002380489860222
+
+Summary:,"The LMC has been run with the following parameters:
+  - Device: cpu
+  - Loss function: BBCE
+  - l_max: 4.0
+  - Network architecture: FCN1L
+  - Number of hidden layers: 1
+  - Width of hidden layers: 500
+  - Dataset type: mnist
+  - Random labels: True
+  - Training set size: 2000
+  - Test set size: 9786
+  - Minimum epochs: 4000
+  - Number of Batches: 40
+  - Beta values: [0.0, 1000]
+  - Learning rate (a0): 0.01
+  - Learning rate decay (b): 0.5
+  - Gaussian prior sigma: 5
+ -  alpha_average: 0.01
+ -  alpha_stop: 0.00025
+ -  eta: 0.1
+ -  eps: 1e-07
+ -  Gradient norm: [0.057375683059448394, 1.3323065023079383]
+"

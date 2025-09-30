@@ -1,0 +1,27 @@
+Sample_size,Beta,BCE_Train,BCE_Test,0-1_Train,0-1_Test,EMA_BCE_Train,EMA_BCE_Test,EMA_0-1_Train,EMA_0-1_Test
+2000,0.0,0.522000253200531,0.51900315284729,0.5220000147819519,0.5189999938011169,0.4990352750541264,0.5030815491803471,0.4990736945085348,0.5031120356161178
+2000,1000,0.13756360113620758,0.17452892661094666,0.14149999618530273,0.17825410763422647,0.13503104834281843,0.1735219924646611,0.13901670220073714,0.177402724956432
+
+Summary:,"The LMC has been run with the following parameters:
+  - Device: cpu
+  - Loss function: SAVAGE
+  - l_max: 4.0
+  - Network architecture: FCN1L
+  - Number of hidden layers: 1
+  - Width of hidden layers: 500
+  - Dataset type: mnist
+  - Random labels: False
+  - Training set size: 2000
+  - Test set size: 9786
+  - Minimum epochs: 4000
+  - Number of Batches: 1
+  - Beta values: [0.0, 1000]
+  - Learning rate (a0): 0.01
+  - Learning rate decay (b): 0.5
+  - Gaussian prior sigma: 5
+ -  alpha_average: 0.01
+ -  alpha_stop: 0.00025
+ -  eta: 0.1
+ -  eps: 1e-07
+ -  Gradient norm: [0.06255352957627025, 0.19188962021570546]
+"
