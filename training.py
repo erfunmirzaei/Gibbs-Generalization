@@ -182,9 +182,6 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
 
-    # Check if we're using BBCE for optimization (to determine if transformation is needed)
-    using_bbce_for_optimization = isinstance(criterion, BoundedCrossEntropyLoss)
-
     # Initialize SGLD optimizer with inverse temperature
     optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
                      beta=beta, add_noise=add_noise)
