@@ -228,7 +228,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001BBCE.csv", "MRL1W500ULA2kLR001BBCE.csv"
+truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR001SAVAGE.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -429,7 +429,7 @@ def show01 (showkls):
         if showkls == 1:
             csv_filename = csv_filename + '_KL'
         if calibration == 0:
-            csv_filename = csv_filename[:-4] + '_nocal.png'
+            csv_filename = csv_filename + '_nocal'
         csv_filename = 'newplots/' + csv_filename + '.png'
     else:
         csv_filename = randomfilename[:-4]
@@ -442,7 +442,7 @@ def show01 (showkls):
         if showkls == 1:
             csv_filename = csv_filename + '_KL'
         if calibration == 0:
-            csv_filename = csv_filename[:-4] + '_nocal.png'
+            csv_filename = csv_filename + '_nocal'
         csv_filename = 'newplots/' + csv_filename + '.png'
 
 
