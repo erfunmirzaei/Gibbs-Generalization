@@ -138,6 +138,14 @@ def minlist (l):
     return m
 
 # compute integral
+# def integral2 ( betas, train, factor ):
+# 	u, s, index = [0], 0, 0
+# 	while ( len (u) < len ( betas ) ):
+# 		s = s + factor*(betas[index+1]-betas[index])*train[index+1] +  factor*(betas[index+1]-betas[index])*abs(train[index] - train[index+1])/2
+# 		u.append(s)
+# 		index = index + 1
+# 	return u
+
 def integral ( betas, train, factor ):
 	u, s, index = [0], 0, 0
 	while ( len (u) < len ( betas ) ):
@@ -145,7 +153,6 @@ def integral ( betas, train, factor ):
 		u.append(s)
 		index = index + 1
 	return u
- 
 
 def gammas ( betas, train, factor ):
 	int = integral ( betas, train, factor ) 
@@ -228,7 +235,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR001SAVAGE.csv"
+truefilename, randomfilename = "MCL1W500ULA2kLR001BBCE.csv", "MRL1W500ULA2kLR001BBCE.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -247,7 +254,7 @@ print (betas)
 if calibration == 1:
     factor = calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.50)
 else:
-    factor = 1 #4 + math.log(1-math.exp(-4)) #In the old files using BBCE loss, we normalized the loss values so we need this factor
+    factor = 1#4 + math.log(1-math.exp(-4)) #In the old files using BBCE loss, we normalized the loss values so we need this factor
 
 if trueLabels == 1:   # then reload 
     betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -313,7 +320,7 @@ def showbce (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('Loss', fontsize=18)
-    ax.set_ylim(0, 0.6)
+    ax.set_ylim(0, 2)
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
@@ -403,7 +410,7 @@ def show01 (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.8])
+    ax.set_ylim([0, 0.75])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 

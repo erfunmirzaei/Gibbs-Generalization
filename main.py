@@ -10,8 +10,8 @@ from dataset import (get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_
 from training import run_beta_experiments
 
 # Configuration flags
-TEST_MODE = True  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = False  # Set to True for random labels, False for correct labels
+TEST_MODE = False  # Set to True for quick test, False for full experiment
+USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
 DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
@@ -37,8 +37,8 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [1000]  # Minimal set for testing
-            a0 = {0: 0.01, 1000: 0.01}
+            beta_values = []  # Minimal set for testing
+            a0 = {0: 0.01}
         
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing
@@ -46,10 +46,14 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k 
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            #beta_values = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000]  # Extended MNIST experiment, n = 2k
+            # beta_values = [375, 750, 1250, 1500, 1750]
+            # a0 = {375: 0.01, 750:0.01, 1250:0.01, 1500:0.01, 1750:0.01}
+            a0 = {0: 0.04, 125: 0.04, 250: 0.04, 500: 0.04, 1000: 0.04, 2000: 0.04, 4000: 0.04, 8000: 0.04, 16000: 0.04}
+
             # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
-            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
+            #a0 = {0:0.01, 1000:0.01, 2000:0.01, 3000:0.01, 4000:0.01, 5000:0.01, 6000:0.01, 7000:0.01, 8000:0.01, 9000:0.01, 10000:0.01, 11000:0.01, 12000:0.01, 13000:0.01, 14000:0.01, 15000:0.01, 16000:0.01}
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
@@ -109,7 +113,7 @@ def main():
     
     # Run the experiment with optimizations
     run_beta_experiments(
-        loss = 'SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
+        loss = 'Savage', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
@@ -128,7 +132,7 @@ def main():
         eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
         eps=1e-7,
         test_mode=TEST_MODE,
-        add_grad_norm=True,
+        add_grad_norm=False,
         add_noise=True,  # If False, it becomes (S)GD
     )
     

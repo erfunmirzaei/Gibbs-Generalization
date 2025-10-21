@@ -79,3 +79,4 @@ Desktop.ini
 *.pth
 *.ckpt
 *.h5
+*_TEST_*

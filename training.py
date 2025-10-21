@@ -4,6 +4,7 @@ Training and experiment orchestration for the Gibbs generalization bound experim
 This module contains functions for training models with SGLD and running
 experiments across different beta values with multiple repetitions.
 """
+import math
 import torch
 import torch.optim as optim
 import time
@@ -207,8 +208,9 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     EMA_train_BCE_losses = [1.0]  # Separate EMA for approximating the ergodic average
     EMA_test_BCE_losses = [1.0]
     EMA_train_zero_one_losses = [1.0]
-    EMA_test_zero_one_losses = [1.0]
+    EMA_test_zero_one_losses = [1.0]    
     EMA_grad_norm = [0.0]  # EMA for gradient norm if needed
+    p_grad_norm = 8 # L-p norm for gradient norm tracking
     EMA_alpha_BCE = alpha_average
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
@@ -220,14 +222,21 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     epoch = 0
     # if beta == I have to sample from the prior many times and take the average both for train and test losses
     if beta == 0.0:
-        num_prior_samples = 5000
+        num_prior_samples = 1000
 
         model_cpu = model.to('cpu')
+
         for i in range(num_prior_samples):
             learning_rates.append(0.0)  # No learning rate for beta=0 prior sampling
             optimizer.zero_grad(set_to_none=True)
             # Reinitialize model weights from prior
             model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
+            # Use default initialization for prior sampling but with different seeds
+            # torch.manual_seed(42+i*1000)
+            # for layer in model_cpu.children():
+            #     if hasattr(layer, 'reset_parameters'):
+            #         layer.reset_parameters()
+            
             # Compute train loss
             # with torch.no_grad():
             train_loss_total = 0.0
@@ -240,10 +249,11 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             loss_fn.backward()
             if add_grad_norm:
                 grad_norm = torch.nn.utils.clip_grad_norm_(model_cpu.parameters(), float("inf"), norm_type=2).item()
-                EMA_grad_norm.append(EMA_alpha * grad_norm + (1 - EMA_alpha) * EMA_grad_norm[-1])
+                EMA_grad_norm.append(grad_norm ** p_grad_norm)
             zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
             train_zero_one_losses.append(zero_one_loss_total )
             train_losses.append(train_loss_total)
+            grad_dim = sum(p.grad.numel() for p in model_cpu.parameters() if p.grad is not None)
 
             # Compute test loss
             test_loss_total = 0.0
@@ -264,8 +274,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             epoch += 1
             print(f'Beta=0.0: Averaged over {num_prior_samples} prior samples - '
                 f'Train Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, '
-                f'EMA grad norm: {EMA_grad_norm[-1]:.4f}, '
-                f'grad norm: {grad_norm:.4f}, '
+                # f'L-p grad norm: {(1/math.sqrt(grad_dim))*((sum(EMA_grad_norm)/epoch)**(1/p_grad_norm)):.6f}, '
+                # f'grad norm: {grad_norm:.4f}, '
                 f'EMA Train Loss: {EMA_train_BCE_losses[-1]:.4f}, EMA Test Loss: {EMA_test_BCE_losses[-1]:.4f}, '
                 f'EMA Train Zero-One Loss: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test Zero-One Loss: {EMA_test_zero_one_losses[-1]:.4f}'
                 )
@@ -526,7 +536,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
         list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
         list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
-        list_EMA_grad_norm.append(EMA_grad_norm[-1])
+        list_EMA_grad_norm.append(EMA_grad_norm)
 
         print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                 f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
@@ -563,9 +573,10 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix += f"{len(train_loader.dataset)/1000:.0f}k"
         filename_prefix += f"LR{current_a0}".replace('.', '')
         filename_prefix += f"{loss.upper()}"
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename_prefix += f"_{timestamp}"
         if test_mode:
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            filename_prefix += f"_TEST_{timestamp}"
+            filename_prefix += f"_TEST"
         
         summary_string =  f"The LMC has been run with the following parameters:\n" \
         f"  - Device: {device}\n" \
