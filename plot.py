@@ -137,15 +137,6 @@ def minlist (l):
         m = min (m,x)
     return m
 
-# compute integral
-# def integral2 ( betas, train, factor ):
-# 	u, s, index = [0], 0, 0
-# 	while ( len (u) < len ( betas ) ):
-# 		s = s + factor*(betas[index+1]-betas[index])*train[index+1] +  factor*(betas[index+1]-betas[index])*abs(train[index] - train[index+1])/2
-# 		u.append(s)
-# 		index = index + 1
-# 	return u
-
 def integral ( betas, train, factor ):
 	u, s, index = [0], 0, 0
 	while ( len (u) < len ( betas ) ):
@@ -240,6 +231,7 @@ truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR0
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
         av_train01, av_test01, samplesize = main( randomfilename )
+
 samplesize = samplesize[0]
 title = 'random labels '
 print  (samplesize)      

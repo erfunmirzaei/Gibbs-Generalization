@@ -391,3 +391,68 @@ def initialize_nn_weights_gaussian(model: nn.Module, sigma: float, seed: int = 4
         if param.requires_grad:
             nn.init.normal_(param.data, mean=0.0, std=sigma, generator=torch.Generator().manual_seed(seed))
     return model
+
+def initialize_nn_weights_uniform(model: nn.Module, a: float, b: float, seed: int = 42) -> nn.Module:
+    """
+    Initialize neural network weights from a uniform distribution.
+    
+    This function initializes all trainable parameters in the given neural network
+    model using a uniform distribution over the interval [a, b]. This is commonly
+    used for weight initialization in various neural network architectures.
+    
+    Args:
+        model (nn.Module): The neural network model to initialize. All parameters
+                          with requires_grad=True will be initialized.
+        a (float): Lower bound of the uniform distribution.
+        b (float): Upper bound of the uniform distribution.
+        seed (int, optional): Random seed for reproducible initialization. 
+                             Defaults to 42.
+    
+    Returns:
+        nn.Module: The model with initialized weights (modified in-place and returned).
+    
+    Example:
+        >>> model = SynthNN()
+        >>> initialized_model = initialize_nn_weights_uniform(model, a=-0.1, b=0.1)
+        >>> # All weights are now initialized uniformly in [-0.1, 0.1]
+    
+    Note:
+        This function modifies the model in-place and also returns it for convenience.
+        Only parameters with requires_grad=True are initialized.
+    """
+    for param in model.parameters():
+        if param.requires_grad:
+            nn.init.uniform_(param.data, a=a, b=b, generator=torch.Generator().manual_seed(seed))
+    return model
+
+# I want to have the following distribution for the weights:
+# P(w) = exp(-sum_k w_k^4/(4*sigma^4))
+def initialize_nn_weights_quadratic(model: nn.Module, sigma: float, seed: int = 42) -> nn.Module:
+    """
+    Initialize neural network weights from a quartic distribution.
+    
+    This function initializes all trainable parameters in the given neural network
+    model using a distribution proportional to exp(-w^4 / (4 * sigma^4)). This
+    is useful for certain Bayesian neural network formulations where such priors
+    are desired.
+    
+    Args:
+        model (nn.Module): The neural network model to initialize. All parameters
+                          with requires_grad=True will be initialized. 
+        sigma (float): Scale parameter for the quartic distribution. Must be positive.
+        seed (int, optional): Random seed for reproducible initialization. 
+                             Defaults to 42.                     
+    """
+    # I want to have the following distribution for the weights:
+    # P(w) = exp(-sum_k w_k^4/(4*sigma^4))
+    for param in model.parameters():
+        if param.requires_grad:
+            # Sample from the quartic distribution using inverse transform sampling
+            torch.manual_seed(seed)
+            u = torch.rand(param.data.size())
+            w = ( -4 * sigma**4 * torch.log(1 - u) )**(1/4)
+            # Randomly assign sign
+            sign = torch.randint(0, 2, param.data.size()).float() * 2 - 1  # -1 or +1
+            param.data = w * sign
+            
+    return model

@@ -48,7 +48,7 @@ class SGLD(optimizer.Optimizer):
             if sigma_gauss_prior.imag != 0:
                 raise ValueError(f"sigma_gauss_prior must be a real number.")
 
-        weight_decay = 1 / (sigma_gauss_prior * sigma_gauss_prior * beta) if beta > 0 else 1/(sigma_gauss_prior * sigma_gauss_prior)
+        weight_decay = 1 / (beta * (sigma_gauss_prior ** 4)) if beta > 0 else 1/(sigma_gauss_prior ** 4)
         defaults = dict(lr=lr, weight_decay=weight_decay, beta=beta, add_noise=add_noise)
         super(SGLD, self).__init__(params, defaults)
     
@@ -76,7 +76,7 @@ class SGLD(optimizer.Optimizer):
                 continue
             gradient = param.grad.data
             if weight_decay != 0:
-                gradient.add_(param.data, alpha=weight_decay)
+                gradient.add_(param.data**3, alpha=weight_decay)
             if param_group['add_noise']:
                 # Langevin noise scaled by inverse temperature: N(0, 1) / sqrt(lr * beta)
                 # Use device-appropriate noise generation for better GPU performance

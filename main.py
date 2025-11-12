@@ -113,7 +113,7 @@ def main():
     
     # Run the experiment with optimizations
     run_beta_experiments(
-        loss = 'Savage', #'Savage', #'BBCE', #'BCE', #'Tangent'
+        loss = 'BCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
