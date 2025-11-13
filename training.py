@@ -13,7 +13,7 @@ import csv
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
-from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
+from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR, initialize_nn_weights_quadratic
 from sgld import SGLD
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
@@ -230,7 +230,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             learning_rates.append(0.0)  # No learning rate for beta=0 prior sampling
             optimizer.zero_grad(set_to_none=True)
             # Reinitialize model weights from prior
-            model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
+            # model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
+            model_cpu = initialize_nn_weights_quadratic(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
             # Use default initialization for prior sampling but with different seeds
             # torch.manual_seed(42+i*1000)
             # for layer in model_cpu.children():
