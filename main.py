@@ -10,7 +10,7 @@ from dataset import (get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_
 from training import run_beta_experiments
 
 # Configuration flags
-TEST_MODE = True  # Set to True for quick test, False for full experiment
+TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
 DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
