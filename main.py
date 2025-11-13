@@ -37,7 +37,7 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = []  # Minimal set for testing
+            beta_values = [64, 125]  # Minimal set for testing
             a0 = {0: 0.01}
         
         elif DATASET_TYPE == 'cifar10':
@@ -134,6 +134,7 @@ def main():
         test_mode=TEST_MODE,
         add_grad_norm=False,
         add_noise=True,  # If False, it becomes (S)GD
+        sgld_num=1,  # Choose SGLD variant: 1 or 2
     )
     
     print(f"\n{'='*70}")

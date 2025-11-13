@@ -14,7 +14,7 @@ from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
 from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
-from sgld import SGLD
+from sgld import SGLD, SGLD2
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
     """
@@ -133,7 +133,7 @@ def get_a0_for_beta(beta, a0):
 def train_sgld_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
                      beta, device, dataset_type,
-                     l_max, alpha_average, alpha_stop,  eta, eps, add_grad_norm=False, add_noise=True):
+                     l_max, alpha_average, alpha_stop,  eta, eps, add_grad_norm=False, add_noise=True, sgld_num=1):
     """
     Train a neural network using Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -160,6 +160,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         eps (float): Convergence threshold for EMA training loss difference.
         add_grad_norm (bool): Whether to track gradient norm EMA.
         add_noise (bool): Whether to add Langevin noise during SGLD updates.
+        sgld_num (int): SGLD variant number to use (1 or 2).
     
     Returns:
         tuple: Contains (train_losses, test_losses, train_accuracies, test_accuracies,
@@ -184,9 +185,12 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     zero_one_criterion = ZeroOneLoss()
 
     # Initialize SGLD optimizer with inverse temperature
-    optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
+    if sgld_num == 1:
+        optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
                      beta=beta, add_noise=add_noise)
-    
+    if sgld_num == 2:
+        optimizer = SGLD2(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
+                     beta=beta, add_noise=add_noise)
     # Learning rate scheduler with threshold: lr_t = max(a0 * t^(-b), 0.01)
     # This stops the decay when learning rate reaches 0.01
     lr_threshold = eta / beta if beta > 0 else 1e-5  # Avoid division by zero for beta=0
@@ -402,7 +406,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
 
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_steps,
-                         alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, add_noise=True, save_every=1):
+                         alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, 
+                         sgld_num = 1, add_noise=True, save_every=1):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -431,6 +436,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         eps (float): Convergence threshold for EMA training loss difference.
         test_mode (bool, optional): If True, runs a quick test with fewer epochs. Defaults to False.
         add_grad_norm (bool, optional): Whether to track gradient norm EMA. Defaults to False.
+        sgld_num (int, optional): SGLD variant number to use. Defaults to 1.
         add_noise (bool, optional): Whether to add Langevin noise during SGLD updates. Defaults to True.
         save_every (int, optional): Save checkpoint frequency. Defaults to 1.
     
@@ -521,7 +527,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             eta=eta,
             eps=eps,
             add_grad_norm=add_grad_norm,
-            add_noise=add_noise
+            add_noise=add_noise,
+            sgld_num=sgld_num
         )
         
 
