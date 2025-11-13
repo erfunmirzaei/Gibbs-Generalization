@@ -222,7 +222,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     epoch = 0
     # if beta == I have to sample from the prior many times and take the average both for train and test losses
     if beta == 0.0:
-        num_prior_samples = 1000
+        num_prior_samples = 500
 
         model_cpu = model.to('cpu')
 
