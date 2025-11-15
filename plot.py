@@ -220,8 +220,8 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 display = 1       # 0 = BBCE, 1 = 01
 trueLabels = 0     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
-showkls = 1        # 0 = don't show, 1 = show
-calibration = 1    # 0 = no calibration 1 = do it
+showkls = 0        # 0 = don't show, 1 = show
+calibration = 0    # 0 = no calibration 1 = do it
 singledraw = 0     # 0 = posterior average, 1 = single draw
 
 # GET DATA
@@ -235,7 +235,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR00025SAVAGE_20251023-150633.csv"
+truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR00025‌BCE_20251114-073105.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
