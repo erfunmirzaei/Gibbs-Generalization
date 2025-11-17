@@ -218,10 +218,14 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 # CONTROL ------------------------------------------------
 
 display = 1       # 0 = BBCE, 1 = 01
-trueLabels = 0     # 0 = random, 1 = true labels
+trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
+<<<<<<< HEAD
 calibration = 0    # 0 = no calibration 1 = do it
+=======
+calibration = 1    # 0 = no calibration 1 = do it
+>>>>>>> 4fa6c68 (Refactor code structure for improved readability and maintainability)
 singledraw = 0     # 0 = posterior average, 1 = single draw
 
 # GET DATA
@@ -235,7 +239,15 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # ( LR# ) learning rate where 001 = 0.01 etc
 # ( loss fctn ) BBCE, Savage
 
+<<<<<<< HEAD
 truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE.csv", "MRL1W500ULA2kLR00025‌BCE_20251114-073105.csv"
+=======
+# MNIST, 1Layer, Sgld, 2k, 001, Savage:‌MCL1W500SGLD2kLR001SAVAGE 
+# CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
+# MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
+
+truefilename, randomfilename = "MCL1W500ULA2kLR001BCE.csv", "MRL1W500ULA2kLR001BCE.csv"
+>>>>>>> 4fa6c68 (Refactor code structure for improved readability and maintainability)
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -252,7 +264,7 @@ if boundtype == 1:
 print (betas)
 
 if calibration == 1:
-    factor = calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.50)
+    factor = calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.51)
 else:
     factor = 1#4 + math.log(1-math.exp(-4)) #In the old files using BBCE loss, we normalized the loss values so we need this factor
 
@@ -410,7 +422,7 @@ def show01 (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.75])
+    ax.set_ylim([0, 0.61])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
