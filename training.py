@@ -404,10 +404,294 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
             EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm)
 
+def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps, 
+                     a0, b, sigma_gauss_prior, 
+                     beta_values, device, dataset_type,
+                     l_max, alpha_average, alpha_stop,  eta, eps, add_grad_norm=False, add_noise=True, sgld_num=1,
+                     min_steps_first_beta=None):
+    """
+    Train a neural network using Annealed Stochastic Gradient Langevin Dynamics (SGLD).
+    
+    Implements annealed SGLD training where the model is trained sequentially with 
+    increasing beta values (inverse temperature). After convergence at one beta,
+    the training continues with the next beta value, preserving the model state
+    and EMA filters. For beta=0, samples from the prior distribution instead of training.
+    
+    Args:
+        loss (str): Loss function name ('bce', 'tangent', or 'savage').
+        model (nn.Module): Neural network model to train.
+        train_loader (DataLoader): Training data loader.
+        test_loader (DataLoader): Test data loader.
+        min_steps (int): Minimum number of epochs to train before checking convergence for subsequent betas.
+        a0 (float): Initial learning rate.
+        b (float): Learning rate decay exponent (lr_t = a0 * t^(-b)).
+        sigma_gauss_prior (float): Standard deviation of Gaussian prior for weights.
+        beta_values (list): List of inverse temperature values to anneal through.
+        device (torch.device or str): Device for computation ('cpu' or 'cuda').
+        dataset_type (str): Dataset type ('synth' or 'mnist') for loss computation.
+        l_max (float): Maximum loss value for bounded transformation.
+        alpha_average (float): EMA smoothing factor for loss averaging.
+        alpha_stop (float): EMA smoothing factor for convergence detection.
+        eta (float): Learning rate threshold parameter (lr >= eta/beta).
+        eps (float): Convergence threshold for EMA training loss difference.
+        add_grad_norm (bool): Whether to track gradient norm EMA.
+        add_noise (bool): Whether to add Langevin noise during SGLD updates.
+        sgld_num (int): SGLD variant number to use (1 or 2).
+        min_steps_first_beta (int, optional): Minimum steps for the first beta (> 0). 
+            If None, uses min_steps for all betas. Typically should be larger than min_steps.
+    
+    Returns:
+        tuple: Contains lists of results for each beta value - 
+               (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, 
+               list_test_01_losses, list_EMA_train_BCE_losses, list_EMA_test_BCE_losses,   
+               list_EMA_train_01_losses, list_EMA_test_01_losses, list_EMA_grad_norm).
+    """
+    # Convert device to torch.device if it's a string
+    if isinstance(device, str):
+        device = torch.device(device)
+    
+    model = model.to(device)
+    # Define loss function
+    if loss.lower() == 'bbce':
+        criterion = BoundedCrossEntropyLoss(ell_max=l_max)
+    elif loss.lower() == 'tangent':
+        criterion = TangentLoss()
+    elif loss.lower() == 'savage':
+        criterion = SavageLoss()
+    else:
+        criterion = BCEWithLogitsLoss()  
+    zero_one_criterion = ZeroOneLoss()
+
+    # Lists to store final results for each beta
+    list_train_BCE_losses = []
+    list_test_BCE_losses = []
+    list_train_01_losses = []
+    list_test_01_losses = []
+    list_EMA_train_BCE_losses = []
+    list_EMA_test_BCE_losses = []
+    list_EMA_train_01_losses = []
+    list_EMA_test_01_losses = []
+    list_EMA_grad_norm = []
+
+    # EMA variables that persist across beta values
+    EMA_train_losses = [0.0, 1.0]  # For convergence detection
+    EMA_train_BCE_losses = [1.0]  # For ergodic average
+    EMA_test_BCE_losses = [1.0]
+    EMA_train_zero_one_losses = [1.0]
+    EMA_test_zero_one_losses = [1.0]    
+    EMA_grad_norm = [0.0]
+    
+    p_grad_norm = 8  # L-p norm for gradient norm tracking
+    EMA_alpha = alpha_stop  # Smoothing factor for EMA of loss (for convergence)
+    EMA_alpha_BCE = alpha_average  # Smoothing factor for EMA of loss (for averaging)
+    
+    # Initialize optimizer (will be updated for each beta)
+    optimizer = None
+    
+    # Set minimum steps for first beta vs subsequent betas
+    if min_steps_first_beta is None:
+        min_steps_first_beta = min_steps
+    
+    print(f"\n{'='*80}")
+    print(f"Starting Annealed SGLD with {len(beta_values)} beta values: {sorted(beta_values)}")
+    print(f"Model state and EMA filters will be preserved between beta transitions")
+    print(f"Minimum steps for first beta (>0): {min_steps_first_beta}")
+    print(f"Minimum steps for subsequent betas: {min_steps}")
+    print(f"{'='*80}\n")
+    
+    # Track if we've trained the first beta > 0 yet
+    first_nonzero_beta_trained = False
+    
+    for beta_idx, beta in enumerate(sorted(beta_values)):
+        print(f"\n--- Beta {beta_idx + 1}/{len(beta_values)}: β = {beta} ---")
+        
+        # For first beta or when transitioning, update/create optimizer with new beta
+        if beta_idx == 0 or optimizer is None:
+            # Create new optimizer for first beta
+            if sgld_num == 1:
+                optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
+                            beta=beta, add_noise=add_noise)
+            elif sgld_num == 2:
+                optimizer = SGLD2(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
+                            beta=beta, add_noise=add_noise)
+        else:
+            # Update beta in existing optimizer (preserving model state)
+            print(f"Updating optimizer beta from previous value to {beta}")
+            weight_decay = 1 / (sigma_gauss_prior * sigma_gauss_prior * beta) if beta > 0 else 1/(sigma_gauss_prior * sigma_gauss_prior)
+            for param_group in optimizer.param_groups:
+                param_group['beta'] = beta
+                param_group['weight_decay'] = weight_decay
+        
+        # Reset EMA_train_losses for convergence detection (but keep other EMAs)
+        # We keep the ergodic average EMAs to continue tracking across betas
+        local_EMA_train_losses = [EMA_train_losses[-1], EMA_train_losses[-1]]  # Start from current value
+        
+        # Tracking for this beta
+        local_epoch = 0
+        start_time = time.time()
+        
+        # Special handling for beta=0 (prior sampling)
+        if beta == 0.0:
+            print("Beta=0: Sampling from prior distribution")
+            num_prior_samples = 1000
+            model_cpu = model.to('cpu')
+            
+            temp_train_losses = []
+            temp_test_losses = []
+            temp_train_01 = []
+            temp_test_01 = []
+
+            for i in range(num_prior_samples):
+                # Reinitialize model weights from prior
+                model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
+                
+                # Compute train loss
+                batch_x, batch_y = next(iter(train_loader))
+                outputs = model_cpu(batch_x)
+                loss_fn = criterion(outputs.squeeze(), batch_y)
+                zero_one_loss = zero_one_criterion(outputs, batch_y)
+                
+                temp_train_losses.append(loss_fn.item())
+                temp_train_01.append(zero_one_loss.item())
+                
+                # Update EMAs
+                EMA_train_BCE_losses.append(EMA_alpha_BCE * temp_train_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+                EMA_train_zero_one_losses.append(EMA_alpha_BCE * temp_train_01[-1] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+
+                # Compute test loss
+                with torch.no_grad():
+                    batch_x, batch_y = next(iter(test_loader))
+                    outputs = model_cpu(batch_x)
+                    loss_fn = criterion(outputs.squeeze(), batch_y)
+                    zero_one_loss = zero_one_criterion(outputs, batch_y)
+                    
+                    temp_test_losses.append(loss_fn.item())
+                    temp_test_01.append(zero_one_loss.item())
+                    
+                    EMA_test_BCE_losses.append(EMA_alpha_BCE * temp_test_losses[-1] + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+                    EMA_test_zero_one_losses.append(EMA_alpha_BCE * temp_test_01[-1] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+            
+            print(f'Beta=0.0: Sampled {num_prior_samples} times from prior - '
+                  f'EMA Train BCE: {EMA_train_BCE_losses[-1]:.4f}, EMA Test BCE: {EMA_test_BCE_losses[-1]:.4f}, '
+                  f'EMA Train 0-1: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test 0-1: {EMA_test_zero_one_losses[-1]:.4f}')
+            
+            # Move model back to device
+            model = model.to(device)
+        
+        # Training for beta > 0
+        else:
+            # Determine which min_steps to use
+            if not first_nonzero_beta_trained:
+                current_min_steps = min_steps_first_beta
+                first_nonzero_beta_trained = True
+                print(f"Training with beta={beta}, min_steps={current_min_steps} (FIRST beta>0), a0={a0}")
+            else:
+                current_min_steps = min_steps
+                print(f"Training with beta={beta}, min_steps={current_min_steps}, a0={a0}")
+                print(f"Continuing from previous beta (model state and EMAs preserved)")
+            
+            # Train until convergence
+            while (local_EMA_train_losses[-1] - local_EMA_train_losses[-2] < eps or 
+                   local_epoch < current_min_steps / len(train_loader)):
+                # Training phase
+                model.train()
+                train_loss_total = 0.0
+                train_zero_one_total = 0.0
+                
+                for batch_x, batch_y in train_loader:
+                    batch_x = batch_x.to(device, non_blocking=True)
+                    batch_y = batch_y.to(device, non_blocking=True)
+                    
+                    optimizer.zero_grad(set_to_none=True)
+                    outputs = model(batch_x)
+                    
+                    loss_fn = criterion(outputs.squeeze(), batch_y)
+                    zero_one_loss = zero_one_criterion(outputs, batch_y)
+                    
+                    loss_fn.backward()
+                    optimizer.step()
+                    
+                    # Update EMAs
+                    bce_val = loss_fn.item()
+                    zero_one_val = zero_one_loss.item()
+                    train_loss_total += bce_val
+                    train_zero_one_total += zero_one_val
+                    
+                    EMA_train_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+                    EMA_train_zero_one_losses.append(EMA_alpha_BCE * zero_one_val + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+                    local_EMA_train_losses.append(EMA_alpha * bce_val + (1 - EMA_alpha) * local_EMA_train_losses[-1])
+                
+                avg_train_loss = train_loss_total / len(train_loader)
+                avg_train_zero_one = train_zero_one_total / len(train_loader)
+                
+                # Test/Evaluation phase
+                model.eval()
+                test_loss_total = 0.0
+                test_zero_one_total = 0.0
+                
+                with torch.no_grad():
+                    for batch_x, batch_y in test_loader:
+                        batch_x = batch_x.to(device, non_blocking=True)
+                        batch_y = batch_y.to(device, non_blocking=True)
+                        
+                        outputs = model(batch_x)
+                        loss_fn = criterion(outputs.squeeze(), batch_y)
+                        zero_one_loss = zero_one_criterion(outputs, batch_y)
+                        
+                        bce_val = loss_fn.item()
+                        zero_one_val = zero_one_loss.item()
+                        test_loss_total += bce_val
+                        test_zero_one_total += zero_one_val
+                        
+                        EMA_test_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+                        EMA_test_zero_one_losses.append(EMA_alpha_BCE * zero_one_val + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+                
+                avg_test_loss = test_loss_total / len(test_loader)
+                avg_test_zero_one = test_zero_one_total / len(test_loader)
+                
+                # Progress reporting
+                if (local_epoch + 1) % 10 == 0 or local_epoch == 0:
+                    ema_diff = local_EMA_train_losses[-1] - local_EMA_train_losses[-2]
+                    print(f'Epoch [{local_epoch+1:>6}] Beta: {beta} '
+                          f'EMA diff: {ema_diff:.6f} '
+                          f'Train BCE: {avg_train_loss:.4f} Test BCE: {avg_test_loss:.4f} '
+                          f'Train 0-1: {avg_train_zero_one:.4f} Test 0-1: {avg_test_zero_one:.4f} '
+                          f'EMA Train BCE: {EMA_train_BCE_losses[-1]:.4f}')
+                
+                local_epoch += 1
+            
+            elapsed_time = time.time() - start_time
+            print(f"Beta={beta} training completed in {elapsed_time:.1f}s over {local_epoch} epochs")
+            print(f"Final - EMA Train BCE: {EMA_train_BCE_losses[-1]:.4f}, EMA Test BCE: {EMA_test_BCE_losses[-1]:.4f}")
+        
+        # Store results for this beta
+        list_train_BCE_losses.append(EMA_train_BCE_losses[-1])
+        list_test_BCE_losses.append(EMA_test_BCE_losses[-1])
+        list_train_01_losses.append(EMA_train_zero_one_losses[-1])
+        list_test_01_losses.append(EMA_test_zero_one_losses[-1])
+        list_EMA_train_BCE_losses.append(EMA_train_BCE_losses[-1])
+        list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
+        list_EMA_train_01_losses.append(EMA_train_zero_one_losses[-1])
+        list_EMA_test_01_losses.append(EMA_test_zero_one_losses[-1])
+        list_EMA_grad_norm.append(EMA_grad_norm[-1] if len(EMA_grad_norm) > 1 else 0.0)
+        
+        # Update global EMA for next beta
+        EMA_train_losses.append(local_EMA_train_losses[-1])
+    
+    print(f"\n{'='*80}")
+    print(f"Annealed SGLD completed for all {len(beta_values)} beta values")
+    print(f"{'='*80}\n")
+    
+    # Return results in format compatible with non-annealing case
+    return (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
+            list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, 
+            list_EMA_test_01_losses, list_EMA_grad_norm)
+
+
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_steps,
                          alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, 
-                         sgld_num = 1, add_noise=True, save_every=1):
+                         sgld_num = 1, annealed = False, add_noise=True, save_every=1, min_steps_first_beta=None):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -429,7 +713,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         l_max (float): Maximum loss value for bounded transformation.
         train_loader (DataLoader): Training data loader.
         test_loader (DataLoader): Test data loader.
-        min_steps (int): Minimum number of epochs to train before checking convergence.
+        min_steps (int): Minimum number of epochs to train before checking convergence 
+            (for subsequent betas in annealing, or all betas in non-annealing).
         alpha_average (float): EMA smoothing factor for loss averaging.
         alpha_stop (float): EMA smoothing factor for convergence detection.
         eta (float): Learning rate threshold parameter.
@@ -437,8 +722,11 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         test_mode (bool, optional): If True, runs a quick test with fewer epochs. Defaults to False.
         add_grad_norm (bool, optional): Whether to track gradient norm EMA. Defaults to False.
         sgld_num (int, optional): SGLD variant number to use. Defaults to 1.
+        annealed (bool, optional): Whether to use annealed SGLD. Defaults to False.
         add_noise (bool, optional): Whether to add Langevin noise during SGLD updates. Defaults to True.
         save_every (int, optional): Save checkpoint frequency. Defaults to 1.
+        min_steps_first_beta (int, optional): Minimum steps for first beta in annealing (if annealed=True).
+            If None, uses min_steps for all betas. Should be larger than min_steps.
     
     Returns:
         None: Results are saved to CSV files with experimental metadata.
@@ -477,17 +765,13 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
     
     if add_noise == False:
         extended_beta_values = [extended_beta_values[-1]]  
+
+    if annealed:
+        # In annealed mode, we use a single model and transition between betas
+        print(f"\n🔥 Running ANNEALED SGLD with {len(extended_beta_values)} beta values")
+        current_a0 = get_a0_for_beta(extended_beta_values[0], a0)  # Use a0 for first beta
         
-    betas_experimented = []
-    # Run all beta values for this repetition
-    for beta in sorted(extended_beta_values):
-        betas_experimented.append(beta)
-        current_a0 = get_a0_for_beta(beta, a0)
-        
-        print(f"\n--- Beta = {beta} ---")
-        print(f"Learning rate: {current_a0}")
-        
-        # Create fresh model for each beta-repetition combination
+        # Create model once for all betas
         if dataset_type == 'mnist':
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
@@ -497,7 +781,6 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
-
         elif dataset_type == 'cifar10':
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
@@ -507,10 +790,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'V':
                 model = VGG16_CIFAR(num_classes=1)
-
-        # Train the model
-        training_results = train_sgld_model(
-            loss =loss,
+        
+        # Run annealed training (returns results for all betas)
+        (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
+         list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, 
+         list_EMA_test_01_losses, list_EMA_grad_norm) = train_annealed_sgld_model(
+            loss=loss,
             model=model,
             train_loader=train_loader,
             test_loader=test_loader,
@@ -518,7 +803,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             a0=current_a0,
             b=b,
             sigma_gauss_prior=sigma_gauss_prior,
-            beta=beta,
+            beta_values=extended_beta_values,
             device=device,
             dataset_type=dataset_type,
             l_max=l_max,
@@ -528,29 +813,11 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             eps=eps,
             add_grad_norm=add_grad_norm,
             add_noise=add_noise,
-            sgld_num=sgld_num
+            sgld_num=sgld_num,
+            min_steps_first_beta=min_steps_first_beta  # Pass the parameter
         )
         
-
-        (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
-                EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm) = training_results
-
-        list_train_BCE_losses.append(train_losses[-50])
-        list_test_BCE_losses.append(test_losses[-50])
-        list_train_01_losses.append(train_01_losses[-50])
-        list_test_01_losses.append(test_01_losses[-50])
-        list_EMA_train_BCE_losses.append(EMA_train_BCE_losses[-1])
-        list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
-        list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
-        list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
-        list_EMA_grad_norm.append(EMA_grad_norm)
-
-        print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
-                f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
-        
-
-        # Save a csv file after each repetition if requested
-        # Generate filename prefix based on experiment parameters
+        # Save results for annealed case
         filename_prefix = ""
         if dataset_type == 'mnist':
             filename_prefix = "M"
@@ -567,25 +834,20 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix += f"L{n_hidden_layers}"
         filename_prefix += f"W{width}"
         if len(train_loader) == 1:
-            if add_noise == True:
-                filename_prefix += "ULA"
-            else:
-                filename_prefix += "GD"
+            filename_prefix += "ULA" if add_noise else "GD"
         else:
-            if add_noise == True:
-                filename_prefix += "SGLD"
-            else:
-                filename_prefix += "SGD"
-
+            filename_prefix += "SGLD" if add_noise else "SGD"
+        
         filename_prefix += f"{len(train_loader.dataset)/1000:.0f}k"
-        filename_prefix += f"LR{current_a0}".replace('.', '')
+        filename_prefix += f"LR{str(current_a0).replace('.', '')}"
         filename_prefix += f"{loss.upper()}"
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        filename_prefix += "_ANNEALED"  # Mark as annealed
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename_prefix += f"_{timestamp}"
         if test_mode:
-            filename_prefix += f"_TEST"
+            filename_prefix += "_TEST"
         
-        summary_string =  f"The LMC has been run with the following parameters:\n" \
+        summary_string = f"Annealed LMC has been run with the following parameters:\n" \
         f"  - Device: {device}\n" \
         f"  - Loss function: {loss}\n" \
         f"  - l_max: {l_max}\n" \
@@ -594,33 +856,179 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - Width of hidden layers: {width}\n" \
         f"  - Dataset type: {dataset_type}\n" \
         f"  - Random labels: {use_random_labels}\n" \
-        f"  - Training set size: {len(train_loader.dataset) if train_loader else 'N/A'}\n" \
-        f"  - Test set size: {len(test_loader.dataset) if test_loader else 'N/A'}\n" \
-        f"  - Minimum epochs: {min_steps}\n" \
-        f"  - Number of Batches: {len(train_loader) if train_loader else 'N/A'}\n" \
-        f"  - Beta values: {sorted(betas_experimented)}\n" \
+        f"  - Training set size: {len(train_loader.dataset)}\n" \
+        f"  - Test set size: {len(test_loader.dataset)}\n" \
+        f"  - Minimum steps per beta: {min_steps}\n" \
+        f"  - Number of Batches: {len(train_loader)}\n" \
+        f"  - Beta values (annealed): {sorted(extended_beta_values)}\n" \
         f"  - Learning rate (a0): {current_a0}\n" \
         f"  - Learning rate decay (b): {b}\n" \
         f"  - Gaussian prior sigma: {sigma_gauss_prior}\n" \
-        f" -  alpha_average: {alpha_average}\n" \
-        f" -  alpha_stop: {alpha_stop}\n" \
-        f" -  eta: {eta}\n" \
-        f" -  eps: {eps}\n" \
-        f" -  Gradient norm: {list_EMA_grad_norm}\n"
-
+        f"  - alpha_average: {alpha_average}\n" \
+        f"  - alpha_stop: {alpha_stop}\n" \
+        f"  - eta: {eta}\n" \
+        f"  - eps: {eps}\n"
+        
         csv_path = save_moving_average_losses_to_csv(
             list_train_BCE_losses,
             list_test_BCE_losses,
             list_train_01_losses,
             list_test_01_losses,
             list_EMA_train_BCE_losses,
-            list_EMA_test_BCE_losses,   
+            list_EMA_test_BCE_losses,
             list_EMA_train_01_losses,
             list_EMA_test_01_losses,
             filename_prefix,
-            sorted(betas_experimented),
+            sorted(extended_beta_values),
             len(train_loader.dataset),
             summary_string
         )
+        print(f"\n✅ Annealed SGLD completed! Results saved to: {csv_path}")
 
-    
+    else:  
+        betas_experimented = []
+        # Run all beta values for this repetition
+        for beta in sorted(extended_beta_values):
+            betas_experimented.append(beta)
+            current_a0 = get_a0_for_beta(beta, a0)
+            
+            print(f"\n--- Beta = {beta} ---")
+            print(f"Learning rate: {current_a0}")
+            
+            # Create fresh model for each beta-repetition combination
+            if dataset_type == 'mnist':
+                if n_hidden_layers == 1:
+                    model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 2:
+                    model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 3:
+                    model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 'L':
+                    model = LeNet5(num_classes=1)
+
+            elif dataset_type == 'cifar10':
+                if n_hidden_layers == 1:
+                    model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 2:
+                    model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 3:
+                    model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 'V':
+                    model = VGG16_CIFAR(num_classes=1)
+
+            # Train the model
+            training_results = train_sgld_model(
+                loss =loss,
+                model=model,
+                train_loader=train_loader,
+                test_loader=test_loader,
+                min_steps=min_steps,
+                a0=current_a0,
+                b=b,
+                sigma_gauss_prior=sigma_gauss_prior,
+                beta=beta,
+                device=device,
+                dataset_type=dataset_type,
+                l_max=l_max,
+                alpha_average=alpha_average,
+                alpha_stop=alpha_stop,
+                eta=eta,
+                eps=eps,
+                add_grad_norm=add_grad_norm,
+                add_noise=add_noise,
+                sgld_num=sgld_num
+            )
+            
+
+            (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
+                    EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm) = training_results
+
+            list_train_BCE_losses.append(train_losses[-50])
+            list_test_BCE_losses.append(test_losses[-50])
+            list_train_01_losses.append(train_01_losses[-50])
+            list_test_01_losses.append(test_01_losses[-50])
+            list_EMA_train_BCE_losses.append(EMA_train_BCE_losses[-1])
+            list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
+            list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
+            list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
+            list_EMA_grad_norm.append(EMA_grad_norm)
+
+            print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
+                    f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
+        
+
+            # Save a csv file after each repetition if requested
+            # Generate filename prefix based on experiment parameters
+            filename_prefix = ""
+            if dataset_type == 'mnist':
+                filename_prefix = "M"
+            elif dataset_type == 'cifar10':
+                filename_prefix = "C"
+            else:
+                filename_prefix = "S"
+            
+            if use_random_labels:
+                filename_prefix += "R"
+            else:
+                filename_prefix += "C"
+            
+            filename_prefix += f"L{n_hidden_layers}"
+            filename_prefix += f"W{width}"
+            if len(train_loader) == 1:
+                if add_noise == True:
+                    filename_prefix += "ULA"
+                else:
+                    filename_prefix += "GD"
+            else:
+                if add_noise == True:
+                    filename_prefix += "SGLD"
+                else:
+                    filename_prefix += "SGD"
+
+            filename_prefix += f"{len(train_loader.dataset)/1000:.0f}k"
+            filename_prefix += f"LR{current_a0}".replace('.', '')
+            filename_prefix += f"{loss.upper()}"
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            filename_prefix += f"_{timestamp}"
+            if test_mode:
+                filename_prefix += f"_TEST"
+            
+            summary_string =  f"The LMC has been run with the following parameters:\n" \
+            f"  - Device: {device}\n" \
+            f"  - Loss function: {loss}\n" \
+            f"  - l_max: {l_max}\n" \
+            f"  - Network architecture: {model.__class__.__name__}\n" \
+            f"  - Number of hidden layers: {n_hidden_layers}\n" \
+            f"  - Width of hidden layers: {width}\n" \
+            f"  - Dataset type: {dataset_type}\n" \
+            f"  - Random labels: {use_random_labels}\n" \
+            f"  - Training set size: {len(train_loader.dataset) if train_loader else 'N/A'}\n" \
+            f"  - Test set size: {len(test_loader.dataset) if test_loader else 'N/A'}\n" \
+            f"  - Minimum epochs: {min_steps}\n" \
+            f"  - Number of Batches: {len(train_loader) if train_loader else 'N/A'}\n" \
+            f"  - Beta values: {sorted(betas_experimented)}\n" \
+            f"  - Learning rate (a0): {current_a0}\n" \
+            f"  - Learning rate decay (b): {b}\n" \
+            f"  - Gaussian prior sigma: {sigma_gauss_prior}\n" \
+            f" -  alpha_average: {alpha_average}\n" \
+            f" -  alpha_stop: {alpha_stop}\n" \
+            f" -  eta: {eta}\n" \
+            f" -  eps: {eps}\n" \
+            f" -  Gradient norm: {list_EMA_grad_norm}\n"
+
+            csv_path = save_moving_average_losses_to_csv(
+                list_train_BCE_losses,
+                list_test_BCE_losses,
+                list_train_01_losses,
+                list_test_01_losses,
+                list_EMA_train_BCE_losses,
+                list_EMA_test_BCE_losses,   
+                list_EMA_train_01_losses,
+                list_EMA_test_01_losses,
+                filename_prefix,
+                sorted(betas_experimented),
+                len(train_loader.dataset),
+                summary_string
+            )
+
+        

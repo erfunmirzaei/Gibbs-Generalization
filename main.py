@@ -37,8 +37,8 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [125]  # Minimal set for testing
-            a0 = {0: 0.01, 125: 0.01}
+            beta_values = [125, 250]  # Minimal set for testing
+            a0 = {0: 0.01, 125: 0.01, 250: 0.01}
         
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing
@@ -117,11 +117,11 @@ def main():
     
     # Run the experiment with optimizations
     run_beta_experiments(
-        loss = 'BCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
+        loss = 'SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
-        sigma_gauss_prior=0.1,
+        sigma_gauss_prior=5,
         device=device,
         n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
         width=500, # Width of each hidden layer, only for fully connected networks
@@ -130,7 +130,7 @@ def main():
         l_max=4.0,
         train_loader=train_loader, 
         test_loader=test_loader,
-        min_steps=4000,
+        min_steps=400,  # Minimum steps for subsequent betas (or all betas if not annealing)
         alpha_average=0.01,
         alpha_stop=0.00025,
         eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
@@ -139,6 +139,8 @@ def main():
         add_grad_norm=False,
         add_noise=True,  # If False, it becomes (S)GD
         sgld_num=1,  # Choose SGLD variant: 1 or 2
+        annealed=True,  # Whether to use annealed SGLD
+        min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
     )
     
     print(f"\n{'='*70}")
