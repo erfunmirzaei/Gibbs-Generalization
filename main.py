@@ -37,8 +37,8 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [125, 250]  # Minimal set for testing
-            a0 = {0: 0.01, 125: 0.01, 250: 0.01}
+            beta_values = [2000, 4000]  # Minimal set for testing
+            a0 = {0: 0.01, 2000: 0.02, 4000: 0.02}
         
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing

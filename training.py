@@ -504,27 +504,13 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     
     for beta_idx, beta in enumerate(sorted(beta_values)):
         print(f"\n--- Beta {beta_idx + 1}/{len(beta_values)}: β = {beta} ---")
-        
-        # For first beta or when transitioning, update/create optimizer with new beta
-        if beta_idx == 0 or optimizer is None:
-            # Create new optimizer for first beta
-            if sgld_num == 1:
-                optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
-                            beta=beta, add_noise=add_noise)
-            elif sgld_num == 2:
-                optimizer = SGLD2(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
-                            beta=beta, add_noise=add_noise)
-        else:
-            # Update beta in existing optimizer (preserving model state)
-            print(f"Updating optimizer beta from previous value to {beta}")
-            weight_decay = 1 / (sigma_gauss_prior * sigma_gauss_prior * beta) if beta > 0 else 1/(sigma_gauss_prior * sigma_gauss_prior)
-            for param_group in optimizer.param_groups:
-                param_group['beta'] = beta
-                param_group['weight_decay'] = weight_decay
-        
-        # Reset EMA_train_losses for convergence detection (but keep other EMAs)
-        # We keep the ergodic average EMAs to continue tracking across betas
-        local_EMA_train_losses = [EMA_train_losses[-1], EMA_train_losses[-1]]  # Start from current value
+
+        if sgld_num == 1:
+            optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
+                        beta=beta, add_noise=add_noise)
+        elif sgld_num == 2:
+            optimizer = SGLD2(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
+                        beta=beta, add_noise=add_noise)
         
         # Tracking for this beta
         local_epoch = 0
@@ -542,6 +528,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
             temp_test_01 = []
 
             for i in range(num_prior_samples):
+                optimizer.zero_grad(set_to_none=True)
                 # Reinitialize model weights from prior
                 model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
                 
@@ -584,6 +571,17 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
             if not first_nonzero_beta_trained:
                 current_min_steps = min_steps_first_beta
                 first_nonzero_beta_trained = True
+                EMA_train_losses = [0.0, 1.0]  # For convergence detection
+                EMA_train_BCE_losses = [1.0]  # For ergodic average
+                EMA_test_BCE_losses = [1.0]
+                EMA_train_zero_one_losses = [1.0]
+                EMA_test_zero_one_losses = [1.0]    
+                EMA_grad_norm = [0.0]
+                # Re initialize model from pytorch default initialization
+                for layer in model.children():
+                    if hasattr(layer, 'reset_parameters'):
+                        layer.reset_parameters()
+                
                 print(f"Training with beta={beta}, min_steps={current_min_steps} (FIRST beta>0), a0={a0}")
             else:
                 current_min_steps = min_steps
@@ -591,7 +589,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 print(f"Continuing from previous beta (model state and EMAs preserved)")
             
             # Train until convergence
-            while (local_EMA_train_losses[-1] - local_EMA_train_losses[-2] < eps or 
+            while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or 
                    local_epoch < current_min_steps / len(train_loader)):
                 # Training phase
                 model.train()
@@ -619,7 +617,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                     
                     EMA_train_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
                     EMA_train_zero_one_losses.append(EMA_alpha_BCE * zero_one_val + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
-                    local_EMA_train_losses.append(EMA_alpha * bce_val + (1 - EMA_alpha) * local_EMA_train_losses[-1])
+                    EMA_train_losses.append(EMA_alpha * bce_val + (1 - EMA_alpha) * EMA_train_losses[-1])
                 
                 avg_train_loss = train_loss_total / len(train_loader)
                 avg_train_zero_one = train_zero_one_total / len(train_loader)
@@ -651,7 +649,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 
                 # Progress reporting
                 if (local_epoch + 1) % 10 == 0 or local_epoch == 0:
-                    ema_diff = local_EMA_train_losses[-1] - local_EMA_train_losses[-2]
+                    ema_diff = EMA_train_losses[-1] - EMA_train_losses[-2]
                     print(f'Epoch [{local_epoch+1:>6}] Beta: {beta} '
                           f'EMA diff: {ema_diff:.6f} '
                           f'Train BCE: {avg_train_loss:.4f} Test BCE: {avg_test_loss:.4f} '
@@ -674,9 +672,6 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
         list_EMA_train_01_losses.append(EMA_train_zero_one_losses[-1])
         list_EMA_test_01_losses.append(EMA_test_zero_one_losses[-1])
         list_EMA_grad_norm.append(EMA_grad_norm[-1] if len(EMA_grad_norm) > 1 else 0.0)
-        
-        # Update global EMA for next beta
-        EMA_train_losses.append(local_EMA_train_losses[-1])
     
     print(f"\n{'='*80}")
     print(f"Annealed SGLD completed for all {len(beta_values)} beta values")
