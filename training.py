@@ -472,6 +472,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     list_EMA_train_01_losses = []
     list_EMA_test_01_losses = []
     list_EMA_grad_norm = []
+    list_num_epochs_per_beta = []
 
     # EMA variables that persist across beta values
     EMA_train_losses = [0.0, 1.0]  # For convergence detection
@@ -501,7 +502,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     
     # Track if we've trained the first beta > 0 yet
     first_nonzero_beta_trained = False
-    
+
     for beta_idx, beta in enumerate(sorted(beta_values)):
         print(f"\n--- Beta {beta_idx + 1}/{len(beta_values)}: β = {beta} ---")
 
@@ -587,7 +588,13 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 current_min_steps = min_steps
                 print(f"Training with beta={beta}, min_steps={current_min_steps}, a0={a0}")
                 print(f"Continuing from previous beta (model state and EMAs preserved)")
-            
+                EMA_train_losses = [0.0, bce_val]  # For convergence detection
+                EMA_train_BCE_losses = [bce_val]  # For ergodic average
+                EMA_test_BCE_losses = [test_bce_val]
+                EMA_train_zero_one_losses = [zero_one_val]
+                EMA_test_zero_one_losses = [test_zero_one_val]
+                EMA_grad_norm = [0.0]
+                # EMA_train_losses[-1] = EMA_train_losses[-1] * 1.5  # Slightly increase to avoid false convergence
             # Train until convergence
             while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or 
                    local_epoch < current_min_steps / len(train_loader)):
@@ -636,13 +643,13 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                         loss_fn = criterion(outputs.squeeze(), batch_y)
                         zero_one_loss = zero_one_criterion(outputs, batch_y)
                         
-                        bce_val = loss_fn.item()
-                        zero_one_val = zero_one_loss.item()
-                        test_loss_total += bce_val
-                        test_zero_one_total += zero_one_val
-                        
-                        EMA_test_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
-                        EMA_test_zero_one_losses.append(EMA_alpha_BCE * zero_one_val + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+                        test_bce_val = loss_fn.item()
+                        test_zero_one_val = zero_one_loss.item()
+                        test_loss_total += test_bce_val
+                        test_zero_one_total += test_zero_one_val
+
+                        EMA_test_BCE_losses.append(EMA_alpha_BCE * test_bce_val + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+                        EMA_test_zero_one_losses.append(EMA_alpha_BCE * test_zero_one_val + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
                 
                 avg_test_loss = test_loss_total / len(test_loader)
                 avg_test_zero_one = test_zero_one_total / len(test_loader)
@@ -672,7 +679,8 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
         list_EMA_train_01_losses.append(EMA_train_zero_one_losses[-1])
         list_EMA_test_01_losses.append(EMA_test_zero_one_losses[-1])
         list_EMA_grad_norm.append(EMA_grad_norm[-1] if len(EMA_grad_norm) > 1 else 0.0)
-    
+        list_num_epochs_per_beta.append(local_epoch)
+
     print(f"\n{'='*80}")
     print(f"Annealed SGLD completed for all {len(beta_values)} beta values")
     print(f"{'='*80}\n")
@@ -680,7 +688,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     # Return results in format compatible with non-annealing case
     return (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
             list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, 
-            list_EMA_test_01_losses, list_EMA_grad_norm)
+            list_EMA_test_01_losses, list_EMA_grad_norm, list_num_epochs_per_beta)
 
 
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
@@ -789,7 +797,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         # Run annealed training (returns results for all betas)
         (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
          list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, 
-         list_EMA_test_01_losses, list_EMA_grad_norm) = train_annealed_sgld_model(
+         list_EMA_test_01_losses, list_EMA_grad_norm, list_num_epochs_per_beta) = train_annealed_sgld_model(
             loss=loss,
             model=model,
             train_loader=train_loader,
@@ -862,8 +870,9 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - alpha_average: {alpha_average}\n" \
         f"  - alpha_stop: {alpha_stop}\n" \
         f"  - eta: {eta}\n" \
-        f"  - eps: {eps}\n"
-        
+        f"  - eps: {eps}\n" \
+        f"  - Number of epochs per beta: {list_num_epochs_per_beta}\n"
+
         csv_path = save_moving_average_losses_to_csv(
             list_train_BCE_losses,
             list_test_BCE_losses,

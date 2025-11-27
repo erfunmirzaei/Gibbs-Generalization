@@ -11,7 +11,7 @@ from training import run_beta_experiments
 
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = False  # Set to True for random labels, False for correct labels
+USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
 DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
@@ -37,8 +37,8 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [2000, 4000]  # Minimal set for testing
-            a0 = {0: 0.01, 2000: 0.02, 4000: 0.02}
+            beta_values = [125, 250, 500]  # Minimal set for testing
+            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01}
         
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing
@@ -121,7 +121,7 @@ def main():
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
-        sigma_gauss_prior=5,
+        sigma_gauss_prior=0.1,
         device=device,
         n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
         width=500, # Width of each hidden layer, only for fully connected networks
@@ -130,7 +130,7 @@ def main():
         l_max=4.0,
         train_loader=train_loader, 
         test_loader=test_loader,
-        min_steps=400,  # Minimum steps for subsequent betas (or all betas if not annealing)
+        min_steps=500,  # Minimum steps for subsequent betas (or all betas if not annealing)
         alpha_average=0.01,
         alpha_stop=0.00025,
         eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
