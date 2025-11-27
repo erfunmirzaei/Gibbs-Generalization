@@ -139,7 +139,7 @@ def main():
         add_grad_norm=False,
         add_noise=True,  # If False, it becomes (S)GD
         sgld_num=1,  # Choose SGLD variant: 1 or 2
-        annealed=True,  # Whether to use annealed SGLD
+        annealed=False,  # Whether to use annealed SGLD
         min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
     )
     

@@ -402,7 +402,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
 
     return (train_losses, test_losses, train_accuracies, test_accuracies,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
-            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm)
+            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm, epoch)
 
 def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
@@ -891,6 +891,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
 
     else:  
         betas_experimented = []
+        list_num_epochs_per_beta = []
         # Run all beta values for this repetition
         for beta in sorted(extended_beta_values):
             betas_experimented.append(beta)
@@ -945,7 +946,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             
 
             (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
-                    EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm) = training_results
+                    EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm, epoch) = training_results
 
             list_train_BCE_losses.append(train_losses[-50])
             list_test_BCE_losses.append(test_losses[-50])
@@ -956,6 +957,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
             list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
             list_EMA_grad_norm.append(EMA_grad_norm)
+            list_num_epochs_per_beta.append(epoch)
 
             print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                     f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
@@ -1018,7 +1020,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             f" -  alpha_stop: {alpha_stop}\n" \
             f" -  eta: {eta}\n" \
             f" -  eps: {eps}\n" \
-            f" -  Gradient norm: {list_EMA_grad_norm}\n"
+            f" -  Gradient norm: {list_EMA_grad_norm}\n" \
+            f" -  Number of epochs per beta: {list_num_epochs_per_beta}\n"
 
             csv_path = save_moving_average_losses_to_csv(
                 list_train_BCE_losses,
