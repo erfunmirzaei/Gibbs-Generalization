@@ -12,7 +12,7 @@ from training import run_beta_experiments
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
-DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
+DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -61,11 +61,11 @@ def main():
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
-            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
-            beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
             # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
-            a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
+            a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
+            # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
     
     print(f"\n{'='*70}")
@@ -99,17 +99,17 @@ def main():
         if USE_RANDOM_LABELS:
             train_loader, test_loader = get_cifar10_binary_dataloaders_random_labels(
                 classes=CIFAR10_CLASSES,
-                n_train_per_group=4000,
+                n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=100,
+                batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
             )
         else:
             train_loader, test_loader = get_cifar10_binary_dataloaders(
                 classes=CIFAR10_CLASSES,
-                n_train_per_group=4000,
+                n_train_per_group=1000,
                 n_test_per_group=5000,
-                batch_size=100,
+                batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
             )
     
@@ -121,7 +121,7 @@ def main():
         beta_values=beta_values,
         a0=a0,  # Now supports dict, callable, or float
         b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
-        sigma_gauss_prior=0.5,
+        sigma_gauss_prior=5.0,
         device=device,
         n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
         width=500, # Width of each hidden layer, only for fully connected networks
@@ -139,7 +139,7 @@ def main():
         add_grad_norm=False,
         add_noise=True,  # If False, it becomes (S)GD
         sgld_num=1,  # Choose SGLD variant: 1 or 2
-        annealed=True,  # Whether to use annealed SGLD
+        annealed=False,  # Whether to use annealed SGLD
         min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
     )
     
