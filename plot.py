@@ -256,7 +256,7 @@ if boundtype == 1:
 print (betas)
 
 if calibration == 1:
-    factor = calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.51)
+    factor = calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5)
 else:
     factor = 1#4 + math.log(1-math.exp(-4)) #In the old files using BBCE loss, we normalized the loss values so we need this factor
 
