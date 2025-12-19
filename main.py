@@ -9,10 +9,11 @@ from dataset import (get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_
                     get_cifar10_binary_dataloaders, get_cifar10_binary_dataloaders_random_labels)
 from training import run_beta_experiments
 
+# TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
-TEST_MODE = False  # Set to True for quick test, False for full experiment
+TEST_MODE = True  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
-DATASET_TYPE = 'cifar10'  # 'mnist' or 'cifar10'
+DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -37,9 +38,9 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [ 16000]  # Minimal set for testing
-            a0 = {0: 0.01, 16000: 0.01}
-        
+            beta_values = [ 125]  # Minimal set for testing
+            a0 = {0: 0.01, 125: 0.01}
+
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing
             a0 = {0: 0.01, 16000: 0.01}
@@ -136,7 +137,7 @@ def main():
         eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
         eps=1e-7,
         test_mode=TEST_MODE,
-        add_grad_norm=False,
+        add_grad_norm=True,
         add_noise=True,  # If False, it becomes (S)GD
         sgld_num=1,  # Choose SGLD variant: 1 or 2
         annealed=False,  # Whether to use annealed SGLD

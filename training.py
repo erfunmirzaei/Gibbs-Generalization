@@ -15,6 +15,7 @@ from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
 from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
 from sgld import SGLD, SGLD2
+from statistics import mean
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
     """
@@ -209,13 +210,18 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     EMA_train_losses = [0.0, 1.0]  # Initialize with 1.0 for epoch 0
     EMA_alpha = alpha_stop  # Smoothing factor for EMA of loss
     
-    EMA_train_BCE_losses = [1.0]  # Separate EMA for approximating the ergodic average
-    EMA_test_BCE_losses = [1.0]
-    EMA_train_zero_one_losses = [1.0]
-    EMA_test_zero_one_losses = [1.0]    
-    EMA_grad_norm = [0.0]  # EMA for gradient norm if needed
-    p_grad_norm = 8 # L-p norm for gradient norm tracking
-    EMA_alpha_BCE = alpha_average
+    # EMA_alpha_BCE = alpha_average
+    # EMA_train_BCE_losses = [1.0]  # Separate EMA for approximating the ergodic average
+    # EMA_test_BCE_losses = [1.0]
+    # EMA_train_zero_one_losses = [1.0]
+    # EMA_test_zero_one_losses = [1.0]   
+    # EMA_train_BCE_losses_sq = [1.0]  # For variance tracking if needed
+    # EMA_test_BCE_losses_sq = [1.0]
+    avg_train_BCE_losses, avg_test_BCE_losses, avg_train_zero_one_losses, avg_test_zero_one_losses = [], [], [], []
+    avg_train_BCE_losses_sq, avg_test_BCE_losses_sq, avg_train_zero_one_losses_sq, avg_test_zero_one_losses_sq = [], [], [], []
+    # EMA_grad_norm = [0.0]  # EMA for gradient norm if needed
+    avg_grad_norm = []
+    p_grad_norm = 2 # L-p norm for gradient norm tracking
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
     print(f"Learning rate scheduler: power law decay with threshold at {lr_threshold}")
@@ -251,9 +257,9 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             train_loss_total += loss_fn.item()
 
             loss_fn.backward()
-            if add_grad_norm:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model_cpu.parameters(), float("inf"), norm_type=2).item()
-                EMA_grad_norm.append(grad_norm ** p_grad_norm)
+            grad_norm = torch.nn.utils.clip_grad_norm_(model_cpu.parameters(), float("inf"), norm_type=2).item()
+            # EMA_grad_norm.append(grad_norm ** p_grad_norm)
+            avg_grad_norm.append(grad_norm ** p_grad_norm)
             zero_one_loss_total += zero_one_criterion(outputs, batch_y).item()
             train_zero_one_losses.append(zero_one_loss_total )
             train_losses.append(train_loss_total)
@@ -271,17 +277,27 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 test_losses.append(test_loss_total)
                 test_zero_one_losses.append(zero_one_loss_total)
 
-            EMA_train_BCE_losses.append(EMA_alpha_BCE * train_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
-            EMA_train_zero_one_losses.append(EMA_alpha_BCE * train_zero_one_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
-            EMA_test_BCE_losses.append(EMA_alpha_BCE * test_losses[-1]  + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
-            EMA_test_zero_one_losses.append(EMA_alpha_BCE * test_zero_one_losses[-1] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+            # EMA_train_BCE_losses.append(EMA_alpha_BCE * train_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+            # EMA_train_zero_one_losses.append(EMA_alpha_BCE * train_zero_one_losses[-1] + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+            # EMA_test_BCE_losses.append(EMA_alpha_BCE * test_losses[-1]  + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+            # EMA_test_zero_one_losses.append(EMA_alpha_BCE * test_zero_one_losses[-1] + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+            # EMA_train_BCE_losses_sq.append(EMA_alpha_BCE * (train_losses[-1]**2) + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses_sq[-1])
+            avg_train_BCE_losses.append(train_losses[-1])
+            avg_train_zero_one_losses.append(train_zero_one_losses[-1])
+
+            avg_test_BCE_losses.append(test_losses[-1])
+            avg_test_zero_one_losses.append(test_zero_one_losses[-1])
+
+            avg_train_BCE_losses_sq.append(train_losses[-1]**2)
+            avg_test_BCE_losses_sq.append(test_losses[-1]**2)
+
             epoch += 1
             print(f'Beta=0.0: Averaged over {num_prior_samples} prior samples - '
                 f'Train Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, '
-                # f'L-p grad norm: {(1/math.sqrt(grad_dim))*((sum(EMA_grad_norm)/epoch)**(1/p_grad_norm)):.6f}, '
-                # f'grad norm: {grad_norm:.4f}, '
-                f'EMA Train Loss: {EMA_train_BCE_losses[-1]:.4f}, EMA Test Loss: {EMA_test_BCE_losses[-1]:.4f}, '
-                f'EMA Train Zero-One Loss: {EMA_train_zero_one_losses[-1]:.4f}, EMA Test Zero-One Loss: {EMA_test_zero_one_losses[-1]:.4f}'
+                f'L-p grad norm: {(1/math.sqrt(grad_dim))*((sum(avg_grad_norm)/epoch)**(1/p_grad_norm)):.6f}, '
+                f'grad norm: {grad_norm:.4f}, '
+                f'EMA Train Loss: {mean(avg_train_BCE_losses):.4f}, EMA Test Loss: {mean(avg_test_BCE_losses):.4f}, '
+                f'EMA Train Zero-One Loss: {mean(avg_train_zero_one_losses):.4f}, EMA Test Zero-One Loss: {mean(avg_test_zero_one_losses):.4f}'
                 )
 
     while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_steps / len(train_loader)) and beta > 0.0:
@@ -291,7 +307,6 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         train_zero_one_total = 0.0
         train_correct = 0
         train_total = 0
-        
         for batch_x, batch_y in train_loader:
             # Use non_blocking=True for faster GPU transfer
             batch_x = batch_x.to(device, non_blocking=True)
@@ -310,19 +325,24 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             loss_fn.backward()
             optimizer.step()
             
-            if add_grad_norm:
-                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
-                EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
+            # if add_grad_norm:
+            # grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
+            # EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
+            
+            # TODO: Use the other approach to update EMA and check the difference
+            try:
+                EMA_train_losses.append( (EMA_alpha/2) * bce_val + (EMA_alpha/2) * loss_fn.item() + (1 - EMA_alpha) * EMA_train_losses[-1])
+            except:
+                EMA_train_losses.append( (EMA_alpha/2) * loss_fn.item() + (EMA_alpha/2) * loss_fn.item() + (1 - EMA_alpha) * EMA_train_losses[-1])
             bce_val = loss_fn.item()
             zeroOne_val = zero_one_loss.item()
             train_loss_total += bce_val
             train_zero_one_total += zeroOne_val
             train_total += batch_y.size(0)
             train_correct += (predicted == batch_y).sum().item()
-            # TODO: Use the other approach to update EMA and check the difference
-            EMA_train_BCE_losses.append(EMA_alpha_BCE *  bce_val  + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
-            EMA_train_zero_one_losses.append( EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
-            EMA_train_losses.append( EMA_alpha * bce_val + (1 - EMA_alpha) * EMA_train_losses[-1])
+            # EMA_train_BCE_losses.append(EMA_alpha_BCE *  bce_val  + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
+            # EMA_train_zero_one_losses.append( EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
+            # EMA_train_BCE_losses_sq.append(EMA_alpha_BCE * (bce_val**2) + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses_sq[-1])
 
         # Step the learning rate scheduler
         current_lr = optimizer.param_groups[0]['lr']
@@ -361,9 +381,10 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 test_total += batch_y.size(0)
                 test_correct += (predicted == batch_y).sum().item()
 
-                EMA_test_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
-                EMA_test_zero_one_losses.append(EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
-        
+                # EMA_test_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
+                # EMA_test_zero_one_losses.append(EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
+                # EMA_test_BCE_losses_sq.append(EMA_alpha_BCE * (bce_val**2) + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses_sq[-1])
+
         avg_test_loss = test_loss_total / len(test_loader)
         avg_test_zero_one = test_zero_one_total / len(test_loader)
         test_accuracy = 100 * test_correct / test_total
@@ -385,8 +406,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                   f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
                   f'LR: {current_lr:.2e} '
                 #   f'Speed: {epochs_per_second:.1f} ep/s '
-                #   f'Norm of gradient: {EMA_grad_norm[-1]:.4f} '
-                  f'EMA Train BCE Loss: {EMA_train_BCE_losses[-1]:.4f} '
+                #   f'Norm of gradient: {avg_grad_norm[-1]:.4f} '
+                #   f'EMA Train BCE Loss: {mean(avg_train_BCE_losses):.4f} '
                   f'EMA Train Loss: {EMA_train_losses[-1]:.4f}'
                   )
             
@@ -395,14 +416,131 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 print(f'GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.0f}MB allocated, '
                       f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
             
-        
         epoch += 1
-    print(f"Training completed in {time.time() - start_time:.1f} seconds over {epoch} epochs.")
-    print(f"Final Training Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, EMA Diff: {EMA_train_losses[-1] - EMA_train_losses[-2]:.6f}, EMA Train Loss: {EMA_train_losses[-1]:.4f}")
+    print(f"First stage of training completed in {time.time() - start_time:.1f} seconds over {epoch} epochs.")
+    if beta > 0.0:
+        mixing_time_est = epoch
+        epoch = 0 
+        for i in range(mixing_time_est):
+            # Training phase
+            model.train()
+            train_loss_total = 0.0
+            train_zero_one_total = 0.0
+            train_correct = 0
+            train_total = 0
+            
+            for batch_x, batch_y in train_loader:
+                # Use non_blocking=True for faster GPU transfer
+                batch_x = batch_x.to(device, non_blocking=True)
+                batch_y = batch_y.to(device, non_blocking=True)
+                
+                # Use more efficient zero_grad
+                optimizer.zero_grad(set_to_none=True)
+                
+                # Standard precision training
+                outputs = model(batch_x)
+                
+                loss_fn = criterion(outputs.squeeze(), batch_y)
+                predicted = (outputs.squeeze() > 0).float()
+                zero_one_loss = zero_one_criterion(outputs, batch_y)
+
+                loss_fn.backward()
+                optimizer.step()
+                
+                # if add_grad_norm:
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
+                avg_grad_norm.append(grad_norm)
+
+                bce_val = loss_fn.item()
+                zeroOne_val = zero_one_loss.item()
+                train_loss_total += bce_val
+                train_zero_one_total += zeroOne_val
+                train_total += batch_y.size(0)
+                train_correct += (predicted == batch_y).sum().item()
+
+                avg_train_BCE_losses.append(bce_val)
+                avg_train_zero_one_losses.append(zeroOne_val)
+                avg_train_BCE_losses_sq.append(bce_val**2)
+
+            # Step the learning rate scheduler
+            current_lr = optimizer.param_groups[0]['lr']
+            learning_rates.append(current_lr)
+            # scheduler.step()
+            
+            avg_train_loss = train_loss_total / len(train_loader)
+            avg_train_zero_one = train_zero_one_total / len(train_loader)
+            train_accuracy = 100 * train_correct / train_total
+            train_losses.append(avg_train_loss)
+            train_zero_one_losses.append(avg_train_zero_one)
+            train_accuracies.append(train_accuracy)
+
+            # Test/Evaluation phase
+            model.eval()
+            test_loss_total = 0.0
+            test_zero_one_total = 0.0
+            test_correct = 0
+            test_total = 0
+            
+            with torch.no_grad():
+                for batch_x, batch_y in test_loader:
+                    batch_x = batch_x.to(device, non_blocking=True)
+                    batch_y = batch_y.to(device, non_blocking=True)
+                    
+                    outputs = model(batch_x)
+
+                    loss_fn = criterion(outputs.squeeze(), batch_y)
+                    predicted = (outputs.squeeze() > 0).float()
+                    zero_one_loss = zero_one_criterion(outputs, batch_y)
+
+                    test_bce_val = loss_fn.item()
+                    zeroOne_val = zero_one_loss.item()
+                    test_loss_total += test_bce_val
+                    test_zero_one_total += zeroOne_val
+                    test_total += batch_y.size(0)
+                    test_correct += (predicted == batch_y).sum().item()
+
+                    avg_test_BCE_losses.append(test_bce_val)
+                    avg_test_zero_one_losses.append(zeroOne_val)
+                    avg_test_BCE_losses_sq.append(test_bce_val**2)
+
+            avg_test_loss = test_loss_total / len(test_loader)
+            avg_test_zero_one = test_zero_one_total / len(test_loader)
+            test_accuracy = 100 * test_correct / test_total
+            test_losses.append(avg_test_loss)
+            test_zero_one_losses.append(avg_test_zero_one)
+            test_accuracies.append(test_accuracy)
+
+
+            # More frequent progress reporting with time estimates
+            if (epoch + 1) % 10 == 0 or epoch == 0:
+                elapsed_time = time.time() - start_time
+                epochs_per_second = (epoch + 1) / elapsed_time if elapsed_time > 0 else 0
+
+                
+                print(f'Epoch [{epoch+1:>6}] '
+                    f'Beta: {beta} '
+                    f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
+                    f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
+                    f'LR: {current_lr:.2e} '
+                    #   f'Speed: {epochs_per_second:.1f} ep/s '
+                    f'Norm of gradient: {avg_grad_norm[-1]:.4f} '
+                    f'EMA Train BCE Loss: {mean(avg_train_BCE_losses):.4f} '
+                    )
+                
+                # GPU memory monitoring (if using CUDA)
+                if device == 'cuda':
+                    print(f'GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.0f}MB allocated, '
+                        f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
+                
+            
+            epoch += 1
+        print(f"Training completed in {time.time() - start_time:.1f} seconds over {epoch} epochs.")
+        print(f"Final Training Loss: {train_losses[-1]:.4f}, Test Loss: {test_losses[-1]:.4f}, EMA Diff: {EMA_train_losses[-1] - EMA_train_losses[-2]:.6f}, EMA Train Loss: {EMA_train_losses[-1]:.4f}")
 
     return (train_losses, test_losses, train_accuracies, test_accuracies,
             train_zero_one_losses, test_zero_one_losses, learning_rates, EMA_train_losses,
-            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_zero_one_losses, EMA_test_zero_one_losses, EMA_grad_norm, epoch)
+            avg_train_BCE_losses, avg_test_BCE_losses, avg_train_zero_one_losses, avg_test_zero_one_losses,
+            avg_train_BCE_losses_sq, avg_test_BCE_losses_sq, avg_grad_norm, epoch)
 
 def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
@@ -757,6 +895,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
     list_EMA_train_01_losses = []
     list_EMA_test_01_losses = []
     list_EMA_grad_norm = []
+    list_EMA_var_train_BCE_losses = []
+    list_EMA_var_test_BCE_losses = []
 
     print(f"\nConfiguration:")    
     print(f"Learning rate (a0) per beta:")
@@ -946,18 +1086,21 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             
 
             (train_losses, test_losses, _, _, train_01_losses, test_01_losses, _, EMA_train_losses,
-                    EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses, EMA_grad_norm, epoch) = training_results
+            EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses,
+            EMA_train_BCE_losses_sq, EMA_test_BCE_losses_sq, EMA_grad_norm, epoch) = training_results
 
             list_train_BCE_losses.append(train_losses[-50])
             list_test_BCE_losses.append(test_losses[-50])
             list_train_01_losses.append(train_01_losses[-50])
             list_test_01_losses.append(test_01_losses[-50])
-            list_EMA_train_BCE_losses.append(EMA_train_BCE_losses[-1])
-            list_EMA_test_BCE_losses.append(EMA_test_BCE_losses[-1])
-            list_EMA_train_01_losses.append(EMA_train_01_losses[-1])
-            list_EMA_test_01_losses.append(EMA_test_01_losses[-1])
-            list_EMA_grad_norm.append(EMA_grad_norm)
+            list_EMA_train_BCE_losses.append(mean(EMA_train_BCE_losses))
+            list_EMA_test_BCE_losses.append(mean(EMA_test_BCE_losses))
+            list_EMA_train_01_losses.append(mean(EMA_train_01_losses))
+            list_EMA_test_01_losses.append(mean(EMA_test_01_losses))
+            list_EMA_grad_norm.append(mean(EMA_grad_norm))
             list_num_epochs_per_beta.append(epoch)
+            list_EMA_var_train_BCE_losses.append(mean(EMA_train_BCE_losses_sq) - mean(EMA_train_BCE_losses)**2)
+            list_EMA_var_test_BCE_losses.append(mean(EMA_test_BCE_losses_sq) - mean(EMA_test_BCE_losses)**2)
 
             print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                     f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
@@ -1021,7 +1164,9 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             f" -  eta: {eta}\n" \
             f" -  eps: {eps}\n" \
             f" -  Gradient norm: {list_EMA_grad_norm}\n" \
-            f" -  Number of epochs per beta: {list_num_epochs_per_beta}\n"
+            f" -  Number of epochs per beta: {list_num_epochs_per_beta}\n" \
+            f" -  Variance of EMA Train BCE losses: {list_EMA_var_train_BCE_losses}\n" \
+            f" -  Variance of EMA Test BCE losses: {list_EMA_var_test_BCE_losses}\n"
 
             csv_path = save_moving_average_losses_to_csv(
                 list_train_BCE_losses,
