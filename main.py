@@ -11,8 +11,8 @@ from training import run_beta_experiments
 
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
-TEST_MODE = True  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = True  # Set to True for random labels, False for correct labels
+TEST_MODE = False  # Set to True for quick test, False for full experiment
+USE_RANDOM_LABELS = False  # Set to True for random labels, False for correct labels
 DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
