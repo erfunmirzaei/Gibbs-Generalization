@@ -1,5 +1,5 @@
 Sample_size,Beta,BCE_Train,BCE_Test,0-1_Train,0-1_Test,EMA_BCE_Train,EMA_BCE_Test,EMA_0-1_Train,EMA_0-1_Test
-2000,0.0,0.5499994158744812,0.5352510809898376,0.550000011920929,0.5352500081062317,0.4995605450570583,0.5011830941736698,0.49959199905395507,0.501211750537157
+2000,0.0,0.5499994158744812,0.5352510809898376,0.550000011920929,0.5352500081062317,0.4995605654120445,0.5011830888390542,0.49959199905395507,0.501211750537157
 
 Summary:,"The LMC has been run with the following parameters:
   - Device: cpu
@@ -15,15 +15,15 @@ Summary:,"The LMC has been run with the following parameters:
   - Minimum epochs: 500
   - Number of Batches: 1
   - Beta values: [0.0]
-  - Learning rate (a0): 0.01
+  - Learning rate (a0): 0.001
   - Learning rate decay (b): 0.5
   - Gaussian prior sigma: 5.0
  -  alpha_average: 0.01
  -  alpha_stop: 0.00025
  -  eta: 0.1
  -  eps: 1e-07
- -  Gradient norm: [0.030645913983635167]
+ -  Gradient norm: [0.030650474469323737]
  -  Number of epochs per beta: [1000]
- -  Variance of EMA Train BCE losses: [0.00141107999769019]
- -  Variance of EMA Test BCE losses: [0.0013744821599653845]
+ -  Variance of EMA Train BCE losses: [0.001411076725563204]
+ -  Variance of EMA Test BCE losses: [0.0013744825270306515]
 "

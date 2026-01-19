@@ -47,15 +47,18 @@ def main():
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            beta_values = [100, 125, 160, 200, 250, 320, 400, 500]
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
             # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             #beta_values = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000]  # Extended MNIST experiment, n = 2k
             # beta_values = [375, 750, 1250, 1500, 1750]
+
             # a0 = {375: 0.01, 750:0.01, 1250:0.01, 1500:0.01, 1750:0.01}
             # a0 = {0: 0.0025, 125: 0.0025, 250: 0.0025, 500: 0.0025, 1000: 0.0025, 2000: 0.0025, 4000: 0.0025, 8000: 0.0025, 16000: 0.0025} #TODO: previous best
             # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
-            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            a0 = {0: 0.001, 100:0.001, 125:0.001, 160:0.001, 200:0.001, 250:0.001, 320:0.001, 400:0.001, 500:0.001}
 
             # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             #a0 = {0:0.01, 1000:0.01, 2000:0.01, 3000:0.01, 4000:0.01, 5000:0.01, 6000:0.01, 7000:0.01, 8000:0.01, 9000:0.01, 10000:0.01, 11000:0.01, 12000:0.01, 13000:0.01, 14000:0.01, 15000:0.01, 16000:0.01}
@@ -131,7 +134,7 @@ def main():
         l_max=4.0,
         train_loader=train_loader, 
         test_loader=test_loader,
-        min_steps=500,  # Minimum steps for subsequent betas (or all betas if not annealing)
+        min_steps=2000,  # Minimum steps for subsequent betas (or all betas if not annealing)
         alpha_average=0.01,
         alpha_stop=0.00025,
         eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
@@ -139,7 +142,7 @@ def main():
         test_mode=TEST_MODE,
         add_grad_norm=True,
         add_noise=True,  # If False, it becomes (S)GD
-        sgld_num=1,  # Choose SGLD variant: 1 or 2
+        sgld_num=0,  # Choose SGLD variant: 1 or 2
         annealed=False,  # Whether to use annealed SGLD
         min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
     )

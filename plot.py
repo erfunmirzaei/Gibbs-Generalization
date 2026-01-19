@@ -218,10 +218,10 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 # CONTROL ------------------------------------------------
 
 display = 1       # 0 = BBCE, 1 = 01
-trueLabels = 0     # 0 = random, 1 = true labels
+trueLabels = 1     # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
-calibration = 1    # 0 = no calibration 1 = do it
+calibration = 0    # 0 = no calibration 1 = do it
 singledraw = 0     # 0 = posterior average, 1 = single draw
 
 # GET DATA
@@ -239,7 +239,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
 # MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001BCE.csv", "MRL1W500ULA2kLR001SAVAGE_20251220-020833.csv"
+truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE_20251220-185711.csv", "MRL1W500ULA2kLR001SAVAGE_20251220-020833.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
