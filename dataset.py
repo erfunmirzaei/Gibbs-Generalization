@@ -16,7 +16,7 @@ from typing import Tuple
 
 def create_synth_dataset(
     n_train: int = 50,
-    n_test: int = 100,
+    n_test: int = 500,
     input_dim: int = 4,
     random_seed: int = None
 ) -> Tuple[TensorDataset, TensorDataset]:
@@ -42,6 +42,12 @@ def create_synth_dataset(
     if random_seed is not None:
         np.random.seed(random_seed)
         torch.manual_seed(random_seed)
+    
+    # Add input validation
+    if n_train <= 0 or n_test <= 0:
+        raise ValueError("n_train and n_test must be positive")
+    if input_dim <= 0:
+        raise ValueError("input_dim must be positive")
     
     # Generate the separating hyperplane
     # Sample hyperplane direction uniformly from unit sphere
@@ -74,10 +80,19 @@ def create_synth_dataset(
     train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
     test_dataset = TensorDataset(X_test_tensor, y_test_tensor)
     
+    print(f"SYNTH Dataset Created:")
+    print(f"  Training samples: {n_train}")
+    print(f"  Test samples: {n_test}")
+    print(f"  Input dimension: {input_dim}")
+    print(f"  Hyperplane norm: {w_norm:.4f}")
+    
     return train_dataset, test_dataset
 
 
 def get_synth_dataloaders(
+    n_train: int = 50,      # Add these
+    n_test: int = 500,      # Add these
+    input_dim: int = 4,     # Add this
     batch_size: int = 10,  # SYNTH uses batch size 10
     random_seed: int = None,
     num_workers: int = 2,  # Add multiprocessing
@@ -87,6 +102,9 @@ def get_synth_dataloaders(
     Create optimized DataLoaders for the SYNTH dataset.
     
     Args:
+        n_train (int): Number of training samples (default: 50)
+        n_test (int): Number of test samples (default: 100)
+        input_dim (int): Dimensionality of input vectors (default: 4)
         batch_size (int): Batch size for DataLoaders (default: 10 for SYNTH)
         random_seed (int): Random seed for reproducibility
         num_workers (int): Number of worker processes for data loading
@@ -95,7 +113,9 @@ def get_synth_dataloaders(
     Returns:
         Tuple[DataLoader, DataLoader]: Training and test DataLoaders
     """
-    train_dataset, test_dataset = create_synth_dataset(random_seed=random_seed)
+    train_dataset, test_dataset = create_synth_dataset(
+        n_train=n_train, n_test=n_test, input_dim=input_dim, random_seed=random_seed
+    )
     
     train_loader = DataLoader(
         train_dataset, 
@@ -121,7 +141,7 @@ def get_synth_dataloaders(
 
 def create_synth_dataset_random_labels(
     n_train: int = 50,
-    n_test: int = 100,
+    n_test: int = 500,
     input_dim: int = 4,
     random_seed: int = None
 ) -> Tuple[TensorDataset, TensorDataset]:
@@ -153,6 +173,12 @@ def create_synth_dataset_random_labels(
         np.random.seed(random_seed)
         torch.manual_seed(random_seed)
     
+    # Add input validation
+    if n_train <= 0 or n_test <= 0:
+        raise ValueError("n_train and n_test must be positive")
+    if input_dim <= 0:
+        raise ValueError("input_dim must be positive")
+    
     # Generate training data with same input distribution as original
     X_train = np.random.randn(n_train, input_dim)  # Zero-mean Gaussian with identity covariance
     # Generate completely random labels (50% probability for each class)
@@ -176,6 +202,9 @@ def create_synth_dataset_random_labels(
 
 
 def get_synth_dataloaders_random_labels(
+    n_train: int = 50,
+    n_test: int = 500,
+    input_dim: int = 4,
     batch_size: int = 10,  # SYNTH uses batch size 10
     random_seed: int = None
 ) -> Tuple[DataLoader, DataLoader]:
@@ -183,13 +212,18 @@ def get_synth_dataloaders_random_labels(
     Create DataLoaders for the SYNTH dataset with random labels.
     
     Args:
+        n_train (int): Number of training samples (default: 50)
+        n_test (int): Number of test samples (default: 100)
+        input_dim (int): Dimensionality of input vectors (default: 4)
         batch_size (int): Batch size for DataLoaders (default: 10 for SYNTH)
         random_seed (int): Random seed for reproducibility
         
     Returns:
         Tuple[DataLoader, DataLoader]: Training and test DataLoaders with random labels
     """
-    train_dataset, test_dataset = create_synth_dataset_random_labels(random_seed=random_seed)
+    train_dataset, test_dataset = create_synth_dataset_random_labels(
+        n_train=n_train, n_test=n_test, input_dim=input_dim, random_seed=random_seed
+    )
     
     train_loader = DataLoader(
         train_dataset, 
@@ -376,82 +410,213 @@ def create_mnist_binary_dataset(
     return train_dataset, test_dataset
 
 
-def get_mnist_binary_dataloaders(
-    classes=[[0], [1]],
-    n_train_per_group: int = 1000,
-    n_test_per_group: int = 500,
-    batch_size: int = 128,  # Increase default batch size for better GPU utilization
-    random_seed: int = None,
-    normalize: bool = True,
-    num_workers: int = 4,  # More workers for MNIST (larger dataset)
-    pin_memory: bool = True
-) -> Tuple[DataLoader, DataLoader]:
-    """
-    Create optimized data loaders for binary MNIST dataset.
+# def get_mnist_binary_dataloaders(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     batch_size: int = 128,  # Increase default batch size for better GPU utilization
+#     random_seed: int = None,
+#     normalize: bool = True,
+#     num_workers: int = 4,  # More workers for MNIST (larger dataset)
+#     pin_memory: bool = True
+# ) -> Tuple[DataLoader, DataLoader]:
+#     """
+#     Create optimized data loaders for binary MNIST dataset.
     
-    Args:
-        classes: Can be either:
-                - List of two individual classes: [0, 1] (backward compatibility)
-                - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
-        n_train_per_group: Number of training samples per group
-        n_test_per_group: Number of test samples per group
-        batch_size: Batch size for data loaders (increased default for efficiency)
-        random_seed: Random seed for reproducibility
-        normalize: Whether to normalize pixel values
-        num_workers: Number of worker processes for data loading
-        pin_memory: Pin memory for faster GPU transfer
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (backward compatibility)
+#                 - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         batch_size: Batch size for data loaders (increased default for efficiency)
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values
+#         num_workers: Number of worker processes for data loading
+#         pin_memory: Pin memory for faster GPU transfer
         
-    Returns:
-        Tuple[DataLoader, DataLoader]: Training and test data loaders
-    """
-    train_dataset, test_dataset = create_mnist_binary_dataset(
-        classes=classes,
-        n_train_per_group=n_train_per_group,
-        n_test_per_group=n_test_per_group,
-        random_seed=random_seed,
-        normalize=normalize
-    )
+#     Returns:
+#         Tuple[DataLoader, DataLoader]: Training and test data loaders
+#     """
+#     train_dataset, test_dataset = create_mnist_binary_dataset(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
     
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
-        prefetch_factor=2 if num_workers > 0 else 2
-    )
-    test_loader = DataLoader(
-        test_dataset, 
-        batch_size=batch_size * 2,  # Larger batch for evaluation
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
-        prefetch_factor=2 if num_workers > 0 else 2
-    )
+#     train_loader = DataLoader(
+#         train_dataset, 
+#         batch_size=batch_size,
+#         shuffle=True,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+#     test_loader = DataLoader(
+#         test_dataset, 
+#         batch_size=batch_size * 2,  # Larger batch for evaluation
+#         shuffle=False,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
     
-    return train_loader, test_loader
+#     return train_loader, test_loader
 
 
-def create_mnist_binary_dataset_random_labels(
+# def create_mnist_binary_dataset_random_labels(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     random_seed: int = None,
+#     normalize: bool = True
+# ) -> Tuple[TensorDataset, TensorDataset]:
+#     """
+#     Create a binary MNIST dataset with random labels (no relationship to actual digits).
+    
+#     This function creates the same input data as create_mnist_binary_dataset but with
+#     completely random labels, breaking the relationship between image content and labels.
+#     This is useful for testing generalization bounds when there's no learnable pattern.
+    
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (backward compatibility)
+#                 - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values to [0, 1]
+        
+#     Returns:
+#         Tuple[TensorDataset, TensorDataset]: Training and test datasets with random labels
+#     """
+#     if random_seed is not None:
+#         np.random.seed(random_seed)
+#         torch.manual_seed(random_seed)
+    
+#     # First create the regular MNIST dataset to get the images
+#     regular_train_dataset, regular_test_dataset = create_mnist_binary_dataset(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
+    
+#     # Extract the data (images) but replace labels with random ones
+#     train_data = regular_train_dataset.tensors[0]  # Get images
+#     test_data = regular_test_dataset.tensors[0]    # Get images
+    
+#     # Generate completely random labels (50% probability for each class)
+#     train_random_labels = torch.randint(0, 2, (len(train_data),), dtype=torch.float32)
+#     test_random_labels = torch.randint(0, 2, (len(test_data),), dtype=torch.float32)
+    
+#     # Create new datasets with random labels
+#     train_dataset_random = TensorDataset(train_data, train_random_labels)
+#     test_dataset_random = TensorDataset(test_data, test_random_labels)
+    
+#     # Handle backward compatibility for printing
+#     if len(classes) == 2 and isinstance(classes[0], int):
+#         group_0_classes = [classes[0]]
+#         group_1_classes = [classes[1]]
+#     else:
+#         group_0_classes = classes[0]
+#         group_1_classes = classes[1]
+    
+#     print(f"MNIST Binary Dataset with RANDOM LABELS Created:")
+#     print(f"  Original group 0 classes: {group_0_classes} (images only, labels randomized)")
+#     print(f"  Original group 1 classes: {group_1_classes} (images only, labels randomized)")
+#     print(f"  Training samples: {len(train_dataset_random)} ({n_train_per_group} per group)")
+#     print(f"  Test samples: {len(test_dataset_random)} ({n_test_per_group} per group)")
+#     print(f"  Input dimension: {train_data.shape[1]} (flattened 28x28)")
+#     print(f"  Normalized: {normalize}")
+#     print(f"  Labels: Completely random (50% each class)")
+    
+#     return train_dataset_random, test_dataset_random
+
+
+# def get_mnist_binary_dataloaders_random_labels(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     batch_size: int = 128,
+#     random_seed: int = None,
+#     normalize: bool = True,
+#     num_workers: int = 4,
+#     pin_memory: bool = True
+# ) -> Tuple[DataLoader, DataLoader]:
+#     """
+#     Create DataLoaders for MNIST binary dataset with random labels.
+    
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (backward compatibility)
+#                 - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         batch_size: Batch size for DataLoaders
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values
+#         num_workers: Number of worker processes for data loading
+#         pin_memory: Whether to pin memory for faster GPU transfer
+        
+#     Returns:
+#         Tuple[DataLoader, DataLoader]: Training and test DataLoaders with random labels
+#     """
+#     train_dataset, test_dataset = create_mnist_binary_dataset_random_labels(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
+    
+#     train_loader = DataLoader(
+#         train_dataset,
+#         batch_size=batch_size,
+#         shuffle=True,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+#     test_loader = DataLoader(
+#         test_dataset,
+#         batch_size=batch_size * 2,  # Larger batch for evaluation
+#         shuffle=False,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+    
+#     return train_loader, test_loader
+
+
+def create_mnist_binary_dataset_partial_random_labels(
     classes=[[0], [1]],
+    p = 0.5,
     n_train_per_group: int = 1000,
     n_test_per_group: int = 500,
     random_seed: int = None,
     normalize: bool = True
 ) -> Tuple[TensorDataset, TensorDataset]:
     """
-    Create a binary MNIST dataset with random labels (no relationship to actual digits).
+    Create a binary MNIST dataset with partial random labels (no relationship to actual digits).
     
     This function creates the same input data as create_mnist_binary_dataset but with
-    completely random labels, breaking the relationship between image content and labels.
-    This is useful for testing generalization bounds when there's no learnable pattern.
+    partially random labels, breaking the relationship between image content and labels.
+    This is useful for testing generalization bounds when there's few learnable pattern.
     
     Args:
         classes: Can be either:
                 - List of two individual classes: [0, 1] (backward compatibility)
                 - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+        p: the percentage of labels to randomize (0.5 means 50% of labels are random, 50% are original)
         n_train_per_group: Number of training samples per group
         n_test_per_group: Number of test samples per group
         random_seed: Random seed for reproducibility
@@ -477,14 +642,20 @@ def create_mnist_binary_dataset_random_labels(
     train_data = regular_train_dataset.tensors[0]  # Get images
     test_data = regular_test_dataset.tensors[0]    # Get images
     
-    # Generate completely random labels (50% probability for each class)
-    train_random_labels = torch.randint(0, 2, (len(train_data),), dtype=torch.float32)
-    test_random_labels = torch.randint(0, 2, (len(test_data),), dtype=torch.float32)
-    
+    # Get original labels
+    train_original_labels = regular_train_dataset.tensors[1]
+    test_original_labels = regular_test_dataset.tensors[1]
+
+    # Flip labels with probability p
+    train_flip_mask = torch.rand(len(train_data)) < p
+    test_flip_mask = torch.rand(len(test_data)) < p
+    train_final_labels = torch.where(train_flip_mask, 1 - train_original_labels, train_original_labels)
+    test_final_labels = torch.where(test_flip_mask, 1 - test_original_labels, test_original_labels)
+
     # Create new datasets with random labels
-    train_dataset_random = TensorDataset(train_data, train_random_labels)
-    test_dataset_random = TensorDataset(test_data, test_random_labels)
-    
+    train_dataset_random = TensorDataset(train_data, train_final_labels)
+    test_dataset_random = TensorDataset(test_data, test_final_labels)
+
     # Handle backward compatibility for printing
     if len(classes) == 2 and isinstance(classes[0], int):
         group_0_classes = [classes[0]]
@@ -504,9 +675,9 @@ def create_mnist_binary_dataset_random_labels(
     
     return train_dataset_random, test_dataset_random
 
-
-def get_mnist_binary_dataloaders_random_labels(
+def get_mnist_binary_dataloaders_partial_random_labels(
     classes=[[0], [1]],
+    p = 0.5,
     n_train_per_group: int = 1000,
     n_test_per_group: int = 500,
     batch_size: int = 128,
@@ -522,6 +693,7 @@ def get_mnist_binary_dataloaders_random_labels(
         classes: Can be either:
                 - List of two individual classes: [0, 1] (backward compatibility)
                 - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] (even vs odd)
+        p: the percentage of labels to randomize (0.5 means 50% of labels are random, 50% are original)
         n_train_per_group: Number of training samples per group
         n_test_per_group: Number of test samples per group
         batch_size: Batch size for DataLoaders
@@ -533,8 +705,9 @@ def get_mnist_binary_dataloaders_random_labels(
     Returns:
         Tuple[DataLoader, DataLoader]: Training and test DataLoaders with random labels
     """
-    train_dataset, test_dataset = create_mnist_binary_dataset_random_labels(
+    train_dataset, test_dataset = create_mnist_binary_dataset_partial_random_labels(
         classes=classes,
+        p=p,
         n_train_per_group=n_train_per_group,
         n_test_per_group=n_test_per_group,
         random_seed=random_seed,
@@ -746,82 +919,301 @@ def create_cifar10_binary_dataset(
     return train_dataset, test_dataset
 
 
-def get_cifar10_binary_dataloaders(
-    classes=[[0], [1]],
-    n_train_per_group: int = 1000,
-    n_test_per_group: int = 500,
-    batch_size: int = 128,  # Increase default batch size for better GPU utilization
-    random_seed: int = None,
-    normalize: bool = True,
-    num_workers: int = 4,  # More workers for CIFAR-10 (larger dataset)
-    pin_memory: bool = True
-) -> Tuple[DataLoader, DataLoader]:
-    """
-    Create optimized data loaders for binary CIFAR-10 dataset.
+# def create_cifar10_binary_dataset_random_labels(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     random_seed: int = None,
+#     normalize: bool = True
+# ) -> Tuple[TensorDataset, TensorDataset]:
+#     """
+#     Create a binary CIFAR-10 dataset with random labels (no relationship to actual images).
     
-    Args:
-        classes: Can be either:
-                - List of two individual classes: [0, 1] (airplane vs automobile)
-                - List of two class groups: [[2, 3, 4, 5, 6, 7], [0, 1, 8, 9]] (animals vs vehicles)
-        n_train_per_group: Number of training samples per group
-        n_test_per_group: Number of test samples per group
-        batch_size: Batch size for data loaders (increased default for efficiency)
-        random_seed: Random seed for reproducibility
-        normalize: Whether to normalize pixel values
-        num_workers: Number of worker processes for data loading
-        pin_memory: Pin memory for faster GPU transfer
+#     This function creates the same input data as create_cifar10_binary_dataset but with
+#     completely random labels, breaking the relationship between image content and labels.
+#     This is useful for testing generalization bounds when there's no learnable pattern.
+    
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (airplane vs automobile)
+#                 - List of two class groups: [[2, 3, 4, 5, 6, 7], [0, 1, 8, 9]] (animals vs vehicles)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values
         
-    Returns:
-        Tuple[DataLoader, DataLoader]: Training and test data loaders
-    """
-    train_dataset, test_dataset = create_cifar10_binary_dataset(
-        classes=classes,
-        n_train_per_group=n_train_per_group,
-        n_test_per_group=n_test_per_group,
-        random_seed=random_seed,
-        normalize=normalize
-    )
+#     Returns:
+#         Tuple[TensorDataset, TensorDataset]: Training and test datasets with random labels
+#     """
+#     if random_seed is not None:
+#         np.random.seed(random_seed)
+#         torch.manual_seed(random_seed)
     
-    train_loader = DataLoader(
-        train_dataset, 
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
-        prefetch_factor=2 if num_workers > 0 else 2
-    )
-    test_loader = DataLoader(
-        test_dataset, 
-        batch_size=batch_size * 2,  # Larger batch for evaluation
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        persistent_workers=num_workers > 0,
-        prefetch_factor=2 if num_workers > 0 else 2
-    )
+#     # First create the regular CIFAR-10 dataset to get the images
+#     regular_train_dataset, regular_test_dataset = create_cifar10_binary_dataset(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
     
-    return train_loader, test_loader
+#     # Extract the data (images) but replace labels with random ones
+#     train_data = regular_train_dataset.tensors[0]  # Get images
+#     test_data = regular_test_dataset.tensors[0]    # Get images
+    
+#     # Generate completely random labels (50% probability for each class)
+#     train_random_labels = torch.randint(0, 2, (len(train_data),), dtype=torch.float32)
+#     test_random_labels = torch.randint(0, 2, (len(test_data),), dtype=torch.float32)
+    
+#     # Create new datasets with random labels
+#     train_dataset_random = TensorDataset(train_data, train_random_labels)
+#     test_dataset_random = TensorDataset(test_data, test_random_labels)
+    
+#     # Handle backward compatibility for printing
+#     if len(classes) == 2 and isinstance(classes[0], int):
+#         group_0_classes = [classes[0]]
+#         group_1_classes = [classes[1]]
+#     else:
+#         group_0_classes = classes[0]
+#         group_1_classes = classes[1]
+    
+#     # CIFAR-10 class names for reference
+#     cifar10_classes = ['airplane', 'automobile', 'bird', 'cat', 'deer', 
+#                       'dog', 'frog', 'horse', 'ship', 'truck']
+    
+#     # Get class names for printing
+#     group_0_names = [cifar10_classes[i] for i in group_0_classes]
+#     group_1_names = [cifar10_classes[i] for i in group_1_classes]
+    
+#     print(f"CIFAR-10 Binary Dataset with RANDOM LABELS Created:")
+#     print(f"  Original group 0 classes: {group_0_classes} {group_0_names} (images only, labels randomized)")
+#     print(f"  Original group 1 classes: {group_1_classes} {group_1_names} (images only, labels randomized)")
+#     print(f"  Training samples: {len(train_dataset_random)} ({n_train_per_group} per group)")
+#     print(f"  Test samples: {len(test_dataset_random)} ({n_test_per_group} per group)")
+#     print(f"  Input dimension: {train_data.shape[1]} (flattened 3x32x32)")
+#     print(f"  Normalized: {normalize}")
+#     print(f"  Labels: Completely random (50% each class)")
+    
+#     return train_dataset_random, test_dataset_random
 
 
-def create_cifar10_binary_dataset_random_labels(
+# def get_cifar10_binary_dataloaders(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     batch_size: int = 128,  # Increase default batch size for better GPU utilization
+#     random_seed: int = None,
+#     normalize: bool = True,
+#     num_workers: int = 4,  # More workers for CIFAR-10 (larger dataset)
+#     pin_memory: bool = True
+# ) -> Tuple[DataLoader, DataLoader]:
+#     """
+#     Create optimized data loaders for binary CIFAR-10 dataset.
+    
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (airplane vs automobile)
+#                 - List of two class groups: [[2, 3, 4, 5, 6, 7], [0, 1, 8, 9]] (animals vs vehicles)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         batch_size: Batch size for data loaders (increased default for efficiency)
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values
+#         num_workers: Number of worker processes for data loading
+#         pin_memory: Pin memory for faster GPU transfer
+        
+#     Returns:
+#         Tuple[DataLoader, DataLoader]: Training and test data loaders
+#     """
+#     train_dataset, test_dataset = create_cifar10_binary_dataset(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
+    
+#     train_loader = DataLoader(
+#         train_dataset, 
+#         batch_size=batch_size,
+#         shuffle=True,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+#     test_loader = DataLoader(
+#         test_dataset, 
+#         batch_size=batch_size * 2,  # Larger batch for evaluation
+#         shuffle=False,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+    
+#     return train_loader, test_loader
+
+
+# def create_cifar10_binary_dataset_random_labels(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     random_seed: int = None,
+#     normalize: bool = True
+# ) -> Tuple[TensorDataset, TensorDataset]:
+#     """
+#     Create a binary CIFAR-10 dataset with random labels (no relationship to actual images).
+    
+#     This function creates the same input data as create_cifar10_binary_dataset but with
+#     completely random labels, breaking the relationship between image content and labels.
+#     This is useful for testing generalization bounds when there's no learnable pattern.
+    
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (airplane vs automobile)
+#                 - List of two class groups: [[2, 3, 4, 5, 6, 7], [0, 1, 8, 9]] (animals vs vehicles)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values
+        
+#     Returns:
+#         Tuple[TensorDataset, TensorDataset]: Training and test datasets with random labels
+#     """
+#     if random_seed is not None:
+#         np.random.seed(random_seed)
+#         torch.manual_seed(random_seed)
+    
+#     # First create the regular CIFAR-10 dataset to get the images
+#     regular_train_dataset, regular_test_dataset = create_cifar10_binary_dataset(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
+    
+#     # Extract the data (images) but replace labels with random ones
+#     train_data = regular_train_dataset.tensors[0]  # Get images
+#     test_data = regular_test_dataset.tensors[0]    # Get images
+    
+#     # Generate completely random labels (50% probability for each class)
+#     train_random_labels = torch.randint(0, 2, (len(train_data),), dtype=torch.float32)
+#     test_random_labels = torch.randint(0, 2, (len(test_data),), dtype=torch.float32)
+    
+#     # Create new datasets with random labels
+#     train_dataset_random = TensorDataset(train_data, train_random_labels)
+#     test_dataset_random = TensorDataset(test_data, test_random_labels)
+    
+#     # Handle backward compatibility for printing
+#     if len(classes) == 2 and isinstance(classes[0], int):
+#         group_0_classes = [classes[0]]
+#         group_1_classes = [classes[1]]
+#     else:
+#         group_0_classes = classes[0]
+#         group_1_classes = classes[1]
+    
+#     # CIFAR-10 class names for reference
+#     cifar10_classes = ['airplane', 'automobile', 'bird', 'cat', 'deer', 
+#                       'dog', 'frog', 'horse', 'ship', 'truck']
+    
+#     # Get class names for printing
+#     group_0_names = [cifar10_classes[i] for i in group_0_classes]
+#     group_1_names = [cifar10_classes[i] for i in group_1_classes]
+    
+#     print(f"CIFAR-10 Binary Dataset with RANDOM LABELS Created:")
+#     print(f"  Original group 0 classes: {group_0_classes} {group_0_names} (images only, labels randomized)")
+#     print(f"  Original group 1 classes: {group_1_classes} {group_1_names} (images only, labels randomized)")
+#     print(f"  Training samples: {len(train_dataset_random)} ({n_train_per_group} per group)")
+#     print(f"  Test samples: {len(test_dataset_random)} ({n_test_per_group} per group)")
+#     print(f"  Input dimension: {train_data.shape[1]} (flattened 3x32x32)")
+#     print(f"  Normalized: {normalize}")
+#     print(f"  Labels: Completely random (50% each class)")
+    
+#     return train_dataset_random, test_dataset_random
+
+
+# def get_cifar10_binary_dataloaders_random_labels(
+#     classes=[[0], [1]],
+#     n_train_per_group: int = 1000,
+#     n_test_per_group: int = 500,
+#     batch_size: int = 128,
+#     random_seed: int = None,
+#     normalize: bool = True,
+#     num_workers: int = 4,
+#     pin_memory: bool = True
+# ) -> Tuple[DataLoader, DataLoader]:
+#     """
+#     Create DataLoaders for CIFAR-10 binary dataset with random labels.
+    
+#     Args:
+#         classes: Can be either:
+#                 - List of two individual classes: [0, 1] (airplane vs automobile)
+#                 - List of two class groups: [[2, 3, 4, 5, 6, 7], [0, 1, 8, 9]] (animals vs vehicles)
+#         n_train_per_group: Number of training samples per group
+#         n_test_per_group: Number of test samples per group
+#         batch_size: Batch size for DataLoaders
+#         random_seed: Random seed for reproducibility
+#         normalize: Whether to normalize pixel values
+#         num_workers: Number of worker processes for data loading
+#         pin_memory: Whether to pin memory for faster GPU transfer
+        
+#     Returns:
+#         Tuple[DataLoader, DataLoader]: Training and test DataLoaders with random labels
+#     """
+#     train_dataset, test_dataset = create_cifar10_binary_dataset_random_labels(
+#         classes=classes,
+#         n_train_per_group=n_train_per_group,
+#         n_test_per_group=n_test_per_group,
+#         random_seed=random_seed,
+#         normalize=normalize
+#     )
+    
+#     train_loader = DataLoader(
+#         train_dataset,
+#         batch_size=batch_size,
+#         shuffle=True,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+#     test_loader = DataLoader(
+#         test_dataset,
+#         batch_size=batch_size * 2,  # Larger batch for evaluation
+#         shuffle=False,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         persistent_workers=num_workers > 0,
+#         prefetch_factor=2 if num_workers > 0 else 2
+#     )
+    
+#     return train_loader, test_loader
+
+
+
+def create_cifar10_binary_dataset_partial_random_labels(
     classes=[[0], [1]],
+    p = 0.5,
     n_train_per_group: int = 1000,
     n_test_per_group: int = 500,
     random_seed: int = None,
     normalize: bool = True
 ) -> Tuple[TensorDataset, TensorDataset]:
     """
-    Create a binary CIFAR-10 dataset with random labels (no relationship to actual images).
+    Create a binary CIFAR-10 dataset with partial random labels (no relationship to actual images).
     
     This function creates the same input data as create_cifar10_binary_dataset but with
-    completely random labels, breaking the relationship between image content and labels.
+    partially random labels, breaking the relationship between image content and labels.
     This is useful for testing generalization bounds when there's no learnable pattern.
     
     Args:
         classes: Can be either:
                 - List of two individual classes: [0, 1] (airplane vs automobile)
                 - List of two class groups: [[2, 3, 4, 5, 6, 7], [0, 1, 8, 9]] (animals vs vehicles)
+        p: the percentage of labels to randomize (0.5 means 50% of labels are random, 50% are original)
         n_train_per_group: Number of training samples per group
         n_test_per_group: Number of test samples per group
         random_seed: Random seed for reproducibility
@@ -847,13 +1239,19 @@ def create_cifar10_binary_dataset_random_labels(
     train_data = regular_train_dataset.tensors[0]  # Get images
     test_data = regular_test_dataset.tensors[0]    # Get images
     
-    # Generate completely random labels (50% probability for each class)
-    train_random_labels = torch.randint(0, 2, (len(train_data),), dtype=torch.float32)
-    test_random_labels = torch.randint(0, 2, (len(test_data),), dtype=torch.float32)
-    
-    # Create new datasets with random labels
-    train_dataset_random = TensorDataset(train_data, train_random_labels)
-    test_dataset_random = TensorDataset(test_data, test_random_labels)
+    # Get original labels
+    train_original_labels = regular_train_dataset.tensors[1]
+    test_original_labels = regular_test_dataset.tensors[1]
+    # Flip labels with probability p
+    train_flip_mask = torch.rand(len(train_data)) < p  
+    test_flip_mask = torch.rand(len(test_data)) < p
+
+    train_final_labels = torch.where(train_flip_mask, 1 - train_original_labels, train_original_labels)
+    test_final_labels = torch.where(test_flip_mask, 1 - test_original_labels, test_original_labels)
+
+    # Create new datasets with partially random labels
+    train_dataset_random = TensorDataset(train_data, train_final_labels)
+    test_dataset_random = TensorDataset(test_data, test_final_labels)
     
     # Handle backward compatibility for printing
     if len(classes) == 2 and isinstance(classes[0], int):
@@ -883,8 +1281,9 @@ def create_cifar10_binary_dataset_random_labels(
     return train_dataset_random, test_dataset_random
 
 
-def get_cifar10_binary_dataloaders_random_labels(
+def get_cifar10_binary_dataloaders_partial_random_labels(
     classes=[[0], [1]],
+    p = 0.5,
     n_train_per_group: int = 1000,
     n_test_per_group: int = 500,
     batch_size: int = 128,
@@ -911,8 +1310,9 @@ def get_cifar10_binary_dataloaders_random_labels(
     Returns:
         Tuple[DataLoader, DataLoader]: Training and test DataLoaders with random labels
     """
-    train_dataset, test_dataset = create_cifar10_binary_dataset_random_labels(
+    train_dataset, test_dataset = create_cifar10_binary_dataset_partial_random_labels(
         classes=classes,
+        p=p,
         n_train_per_group=n_train_per_group,
         n_test_per_group=n_test_per_group,
         random_seed=random_seed,

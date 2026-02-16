@@ -187,10 +187,10 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     # Initialize SGLD optimizer with inverse temperature
     optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
                     beta=beta, add_noise=add_noise)
-
+    # optimizer = MALA(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, beta=beta)
     # Learning rate scheduler with threshold: lr_t = max(a0 * t^(-b), 0.01)
     # This stops the decay when learning rate reaches 0.01
-    lr_threshold = eta / beta if beta > 0 else 1e-5  # Avoid division by zero for beta=0
+    lr_threshold = eta / beta if beta != 0 else 0.01  # Avoid division by zero for beta=0
     def lr_lambda_with_threshold(epoch):
         power_law_lr = (epoch + 1) ** (-b)
         # Convert to actual learning rate value and check threshold
@@ -200,7 +200,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         else:
             return power_law_lr  # Return the normal power law ratio
     
-    scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
+    # scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
     
     train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates = [], [], [], [], [], [], []
     EMA_train_losses = [0.0, 1.0]  # Initialize with 1.0 for epoch 0
@@ -220,7 +220,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     p_grad_norm = 2 # L-p norm for gradient norm tracking
     
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
-    print(f"Learning rate scheduler: power law decay with threshold at {lr_threshold}")
+    # print(f"Learning rate scheduler: power law decay with threshold at {lr_threshold}")
     print(f"Dataset type: {dataset_type}, Device: {device}")
     
     # Progress tracking
@@ -308,6 +308,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             batch_x = batch_x.to(device, non_blocking=True)
             batch_y = batch_y.to(device, non_blocking=True)
             
+            # # ===== SGLD VERSION (commented out) =====
             # Use more efficient zero_grad
             optimizer.zero_grad(set_to_none=True)
             
@@ -317,9 +318,30 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             loss_fn = criterion(outputs.squeeze(), batch_y)
             predicted = (outputs.squeeze() > 0).float()
             zero_one_loss = zero_one_criterion(outputs, batch_y)
-
+            
             loss_fn.backward()
             optimizer.step()
+            # # ===== END SGLD VERSION =====
+            
+            # ===== MALA VERSION =====
+            # Define closure for MALA (computes loss and gradients)
+            # def closure():
+            #     optimizer.zero_grad(set_to_none=True)
+            #     outputs = model(batch_x)
+            #     loss = criterion(outputs.squeeze(), batch_y)
+            #     loss.backward()
+            #     return loss.item()
+            
+            # # MALA step with closure
+            # optimizer.step(closure)
+            
+            # # Compute metrics after the step (model is now at accepted/rejected state)
+            # with torch.no_grad():
+            #     outputs = model(batch_x)
+            #     loss_fn = criterion(outputs.squeeze(), batch_y)
+            #     predicted = (outputs.squeeze() > 0).float()
+            #     zero_one_loss = zero_one_criterion(outputs, batch_y)
+            # ===== END MALA VERSION =====
             
             # if add_grad_norm:
             # grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
@@ -401,6 +423,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                   f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
                   f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
                   f'LR: {current_lr:.2e} '
+                #   f'Accept Rate: {optimizer.acceptance_rate:.2f} '
                 #   f'Speed: {epochs_per_second:.1f} ep/s '
                 #   f'Norm of gradient: {avg_grad_norm[-1]:.4f} '
                 #   f'EMA Train BCE Loss: {mean(avg_train_BCE_losses):.4f} '
@@ -430,6 +453,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 batch_x = batch_x.to(device, non_blocking=True)
                 batch_y = batch_y.to(device, non_blocking=True)
                 
+                # # ===== SGLD VERSION (commented out) =====
                 # Use more efficient zero_grad
                 optimizer.zero_grad(set_to_none=True)
                 
@@ -439,9 +463,30 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 loss_fn = criterion(outputs.squeeze(), batch_y)
                 predicted = (outputs.squeeze() > 0).float()
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
-
+                
                 loss_fn.backward()
                 optimizer.step()
+                # # ===== END SGLD VERSION =====
+                
+                # ===== MALA VERSION =====
+                # Define closure for MALA (computes loss and gradients)
+                # def closure():
+                #     optimizer.zero_grad(set_to_none=True)
+                #     outputs = model(batch_x)
+                #     loss = criterion(outputs.squeeze(), batch_y)
+                #     loss.backward()
+                #     return loss.item()
+                
+                # # MALA step with closure
+                # optimizer.step(closure)
+                
+                # # Compute metrics after the step (model is now at accepted/rejected state)
+                # with torch.no_grad():
+                #     outputs = model(batch_x)
+                #     loss_fn = criterion(outputs.squeeze(), batch_y)
+                #     predicted = (outputs.squeeze() > 0).float()
+                #     zero_one_loss = zero_one_criterion(outputs, batch_y)
+                # ===== END MALA VERSION =====
                 
                 # if add_grad_norm:
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
@@ -518,15 +563,17 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                     f'Train: {avg_train_loss:.4f} Test: {avg_test_loss:.4f} '
                     f'Train0-1: {avg_train_zero_one:.4f} Test0-1: {avg_test_zero_one:.4f} '
                     f'LR: {current_lr:.2e} '
+                    # f'Accept Rate: {optimizer.acceptance_rate:.2f} '
                     #   f'Speed: {epochs_per_second:.1f} ep/s '
                     f'Norm of gradient: {avg_grad_norm[-1]:.4f} '
                     f'EMA Train BCE Loss: {mean(avg_train_BCE_losses):.4f} '
+                    f'EMA Train Loss: {EMA_train_losses[-1]:.4f}'
                     )
                 
                 # GPU memory monitoring (if using CUDA)
                 if device == 'cuda':
                     print(f'GPU Memory: {torch.cuda.memory_allocated(0) / 1024**2:.0f}MB allocated, '
-                        f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
+                          f'{torch.cuda.memory_reserved(0) / 1024**2:.0f}MB reserved')
                 
             
             epoch += 1
@@ -1237,7 +1284,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         n_hidden_layers (int): Number of hidden layers in the network.
         width (int): Width (number of units) of hidden layers.
         dataset_type (str): Dataset type ('synth', 'mnist', or 'CIFAR10').
-        use_random_labels (bool): Whether to use random labels instead of true labels.
+        use_random_labels (float): Percentage of randomly labelled data
         l_max (float): Maximum loss value for bounded transformation.
         train_loader (DataLoader): Training data loader.
         test_loader (DataLoader): Test data loader.
@@ -1352,10 +1399,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         else:
             filename_prefix = "S"
         
-        if use_random_labels:
+        if use_random_labels == 1:
             filename_prefix += "R"
-        else:
+        elif use_random_labels == 0:
             filename_prefix += "C"
+        else:
+            filename_prefix += "P"
         
         filename_prefix += f"L{n_hidden_layers}"
         filename_prefix += f"W{width}"
@@ -1443,6 +1492,14 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                     model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
                 elif n_hidden_layers == 'V':
                     model = VGG16_CIFAR(num_classes=1)
+            
+            elif dataset_type == 'synth':
+                if n_hidden_layers == 1:
+                    model = FCN1L(input_dim=4, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 2:
+                    model = FCN2L(input_dim=4, hidden_dim=width, output_dim=1)
+                elif n_hidden_layers == 3:
+                    model = FCN3L(input_dim=4, hidden_dim=width, output_dim=1)
 
             # Train the model
             
@@ -1497,10 +1554,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             else:
                 filename_prefix = "S"
             
-            if use_random_labels:
+            if use_random_labels == 1:
                 filename_prefix += "R"
-            else:
+            elif use_random_labels == 0:
                 filename_prefix += "C"
+            else: 
+                filename_prefix += "P"
             
             filename_prefix += f"L{n_hidden_layers}"
             filename_prefix += f"W{width}"
@@ -1615,15 +1674,18 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix = ""
         if dataset_type == 'mnist':
             filename_prefix = "M"
+        
         elif dataset_type == 'cifar10':
             filename_prefix = "C"
         else:
             filename_prefix = "S"
         
-        if use_random_labels:
+        if use_random_labels == 1:
             filename_prefix += "R"
-        else:
+        elif use_random_labels == 0:
             filename_prefix += "C"
+        else:
+            filename_prefix += "P"
         
         filename_prefix += f"L{n_hidden_layers}"
         filename_prefix += f"W{width}"
@@ -1681,4 +1743,3 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         print(f"\n✅ Annealed SGLD completed! Results saved to: {csv_path}")
 
 
-        

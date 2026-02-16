@@ -93,9 +93,9 @@ class MALA(Optimizer):
                 p.data.copy_(mean_forward + np.sqrt(lr/beta) * noise)
                 
                 # Accumulate Forward Transition Probability (q)
-                # q(theta* | theta_t) propto exp( - ||theta* - mean_forward||^2 / 2eps )
-                # Since theta* - mean_forward = sqrt(eps)*noise, 
-                # The exponent is: - (eps * ||noise||^2) / (2eps) = -0.5 * ||noise||^2
+                # q(theta* | theta_t) propto exp( - beta * ||theta* - mean_forward||^2 / (2*lr) )
+                # Since theta* - mean_forward = sqrt(lr/beta)*noise, 
+                # The exponent is: - beta * (lr/beta * ||noise||^2) / (2*lr) = -0.5 * ||noise||^2
                 log_q_forward += -0.5 * torch.sum(noise ** 2)
 
         # --- EVALUATE PROPOSAL (theta*) ---

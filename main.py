@@ -5,15 +5,16 @@ This script orchestrates the complete ULA or SGLD experiment, testing different 
 and computing PAC-Bayesian generalization bounds for the MNIST or CIFAR-10 datasets.
 """
 
-from dataset import (get_mnist_binary_dataloaders, get_mnist_binary_dataloaders_random_labels,
-                    get_cifar10_binary_dataloaders, get_cifar10_binary_dataloaders_random_labels)
+from dataset import (get_mnist_binary_dataloaders_partial_random_labels,
+                     get_cifar10_binary_dataloaders_partial_random_labels,
+                     get_synth_dataloaders, get_synth_dataloaders_random_labels,)
 from training import run_beta_experiments
 
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = False  # Set to True for random labels, False for correct labels
-DATASET_TYPE = 'mnist'  # 'mnist' or 'cifar10'
+USE_RANDOM_LABELS = 0.5  # Percentage of randomly labeled data 
+DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -44,11 +45,15 @@ def main():
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing
             a0 = {0: 0.01, 16000: 0.01}
+
+        elif DATASET_TYPE == 'synth':
+            beta_values = [50]  # Minimal set for testing
+            a0 = {0: 0.01, 50: 0.01}
         
     else:
         if DATASET_TYPE == 'mnist':
-            beta_values = [100, 125, 160, 200, 250, 320, 400, 500]
-            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            # beta_values = [100, 125, 160, 200, 250, 320, 400, 500]
+            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
             # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             #beta_values = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000]  # Extended MNIST experiment, n = 2k
             # beta_values = [375, 750, 1250, 1500, 1750]
@@ -56,9 +61,9 @@ def main():
             # a0 = {375: 0.01, 750:0.01, 1250:0.01, 1500:0.01, 1750:0.01}
             # a0 = {0: 0.0025, 125: 0.0025, 250: 0.0025, 500: 0.0025, 1000: 0.0025, 2000: 0.0025, 4000: 0.0025, 8000: 0.0025, 16000: 0.0025} #TODO: previous best
             # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
-            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
-            a0 = {0: 0.001, 100:0.001, 125:0.001, 160:0.001, 200:0.001, 250:0.001, 320:0.001, 400:0.001, 500:0.001}
+            # a0 = {0: 0.001, 100:0.001, 125:0.001, 160:0.001, 200:0.001, 250:0.001, 320:0.001, 400:0.001, 500:0.001}
 
             # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             #a0 = {0:0.01, 1000:0.01, 2000:0.01, 3000:0.01, 4000:0.01, 5000:0.01, 6000:0.01, 7000:0.01, 8000:0.01, 9000:0.01, 10000:0.01, 11000:0.01, 12000:0.01, 13000:0.01, 14000:0.01, 15000:0.01, 16000:0.01}
@@ -71,7 +76,10 @@ def main():
             a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
             # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
-    
+        elif DATASET_TYPE == 'synth':
+            beta_values = [3,6,12,25,50,100,200,400]
+            a0 = {0:0.5, 3:36.0, 6:18.0, 12:9.0, 25:4.5, 50:2.25, 100:1.2, 200:0.6, 400:0.3}
+            
     print(f"\n{'='*70}")
     print(f"Gibbs Generalization EXPERIMENTS")
     print(f"Dataset: {DATASET_TYPE.upper()}")
@@ -81,42 +89,39 @@ def main():
     # Create dataloaders once (same dataset for all repetitions and beta values)
     print("\nCreating dataset and dataloaders...")
     if DATASET_TYPE == 'mnist':
-        if USE_RANDOM_LABELS:
-            train_loader, test_loader = get_mnist_binary_dataloaders_random_labels(
+        train_loader, test_loader = get_mnist_binary_dataloaders_partial_random_labels(
                 classes=MNIST_CLASSES,
+                p= USE_RANDOM_LABELS,
                 n_train_per_group=1000,
                 n_test_per_group=5000,
                 batch_size=2000,
                 random_seed=42001,  # Fixed seed for consistent dataset
                 normalize=True
-            )
-        else:
-            train_loader, test_loader = get_mnist_binary_dataloaders(
-                classes=MNIST_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=2000,
-                random_seed=42001,  # Fixed seed for consistent dataset
-                normalize=True
-            )
+        )
+
     elif DATASET_TYPE == 'cifar10':
+        train_loader, test_loader = get_cifar10_binary_dataloaders_partial_random_labels(
+            classes=CIFAR10_CLASSES,
+            p=USE_RANDOM_LABELS,
+            n_train_per_group=1000,
+            n_test_per_group=5000,
+            batch_size=2000,
+            random_seed=420001,
+        )
+
+    elif DATASET_TYPE == 'synth':
+
         if USE_RANDOM_LABELS:
-            train_loader, test_loader = get_cifar10_binary_dataloaders_random_labels(
-                classes=CIFAR10_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=2000,
+            train_loader, test_loader = get_synth_dataloaders_random_labels(
+                batch_size=50,
                 random_seed=42001,  # Fixed seed for consistent dataset
             )
         else:
-            train_loader, test_loader = get_cifar10_binary_dataloaders(
-                classes=CIFAR10_CLASSES,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=2000,
+            train_loader, test_loader = get_synth_dataloaders(
+                batch_size=50,
                 random_seed=42001,  # Fixed seed for consistent dataset
             )
-    
+
     print(f"Dataset created with fixed random seed (42001) for consistency across all experiments")
     
     # Run the experiment with optimizations
@@ -137,12 +142,12 @@ def main():
         min_steps=2000,  # Minimum steps for subsequent betas (or all betas if not annealing)
         alpha_average=0.01,
         alpha_stop=0.00025,
-        eta=0.1,  # This is used only if you want to schedule the step size (In the current version it is not used)
+        eta=36,  # This is used only if you want to schedule the step size (In the current version it is not used)
         eps=1e-7,
         test_mode=TEST_MODE,
         add_grad_norm=True,
         add_noise=True,  # If False, it becomes (S)GD
-        sgld_num=0,  # Choose SGLD variant: 1 or 2
+        sgld_num=1,  # Choose SGLD variant: 1 or 2
         annealed=False,  # Whether to use annealed SGLD
         min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
     )

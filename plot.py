@@ -39,8 +39,20 @@ def read_csv_2_lists(csv_file_path):
         EMA_test_BCE_idx = headers.index("EMA_BCE_Test")
         EMA_train_01_idx = headers.index("EMA_0-1_Train")
         EMA_test_01_idx = headers.index("EMA_0-1_Test")
+        reached_summary = False
         for row in reader:
-            if len(row) > 1 and row[0] != 'Summary:':  # Skip empty lines
+            if len(row) > 0 and row[0] == 'Summary:':
+                reached_summary = True
+                summary_string = ', '.join(row[1:])
+                print(f"Summary from CSV: {summary_string}")
+                continue
+            
+            # Skip if we've reached the summary section or row is empty/invalid
+            if reached_summary or len(row) < 2:
+                continue
+                
+            # Try to parse the row as data - skip if it fails
+            try:
                 n_samples.append(int(row[n_samples_idx])) 
                 beta_values.append(float(row[beta_idx]))
                 list_train_BCE_losses.append(float(row[train_BCE_idx]))
@@ -51,10 +63,9 @@ def read_csv_2_lists(csv_file_path):
                 list_EMA_test_BCE_losses.append(float(row[EMA_test_BCE_idx]))
                 list_EMA_train_01_losses.append(float(row[EMA_train_01_idx]))
                 list_EMA_test_01_losses.append(float(row[EMA_test_01_idx]))
-
-            elif len(row) > 1 and row[0] == 'Summary:':
-                summary_string = ', '.join(row[1:])
-                print(f"Summary from CSV: {summary_string}")
+            except (ValueError, IndexError):
+                # Skip rows that can't be parsed as data
+                continue
     print(f"   Loaded {len(beta_values)} rows")
     return beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses, list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples
 
@@ -217,8 +228,8 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 
 # CONTROL ------------------------------------------------
 
-display = 1       # 0 = BBCE, 1 = 01
-trueLabels = 1     # 0 = random, 1 = true labels
+display = 2       # 0 = BBCE, 1 = 01, 2 = area between true and random
+trueLabels = 1    # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
 calibration = 0    # 0 = no calibration 1 = do it
@@ -239,7 +250,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
 # MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE_20251220-185711.csv", "MRL1W500ULA2kLR001SAVAGE_20251220-020833.csv"
+truefilename, randomfilename = "cML1S2k001B.csv", "rML1S2k001B.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -414,7 +425,7 @@ def show01 (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 0.61])
+    ax.set_ylim([0, 1])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
@@ -433,8 +444,10 @@ def show01 (showkls):
         csv_filename = truefilename[:-4]
         if display == 1:
             csv_filename = csv_filename + '_01'
-        else:
+        elif display == 0:
             csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
         if singledraw == 1:
             csv_filename = csv_filename + '_singledraw'
         if showkls == 1:
@@ -446,8 +459,10 @@ def show01 (showkls):
         csv_filename = randomfilename[:-4]
         if display == 1:
             csv_filename = csv_filename + '_01'
-        else:
+        elif display == 0:
             csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
         if singledraw == 1:
             csv_filename = csv_filename + '_singledraw'
         if showkls == 1:
@@ -464,7 +479,110 @@ def show01 (showkls):
     plt.tight_layout()
     plt.show()
 
+def showarea (av_bcetrain_true, av_bcetrain_random):
+     from matplotlib.patches import Polygon
+     import matplotlib as mpl
+     
+     # Set hatch properties before creating figure
+     mpl.rcParams['hatch.linewidth'] = 1.5
+     
+     fig, ax = plt.subplots(figsize=(10, 7))
+     
+     # Area A' (full random curve): Draw hatched area FIRST (from 0 to random curve)
+     # This covers the entire area under the random labels curve
+     verts_random = [(betas[0], 0)] + list(zip(betas, av_bcetrain_random)) + [(betas[-1], 0)]
+     poly_random = Polygon(verts_random, facecolor='white', edgecolor='black', 
+                    hatch='////', linewidth=0, label=r"Area $\mathcal{\bar{A}}$ (random labels)")
+     ax.add_patch(poly_random)
+     
+     # Area A: Draw gray area SECOND with transparency so hatching shows through
+     ax.fill_between(betas, 0, av_bcetrain_true, color='gray', alpha=0.7,
+                     label=r"Area $\mathcal{A}$ (true labels)")
+     
+     # Plot the curves on top with clear lines
+     ax.plot(betas, av_bcetrain_true, '-', color='black', linewidth=2.5, label='Mean training loss for True labels')
+     ax.plot(betas, av_bcetrain_random, '--', color='black', linewidth=2.5, label='Mean training loss for Random labels')
+     
+     # Find good positions for labels
+     label_idx = len(betas) // 4
+     
+     # Label "A" in the gray area (below true labels curve)
+     A_x = betas[label_idx]
+     A_y = av_bcetrain_true[label_idx] * 0.3
+    #  ax.text(A_x, A_y, r'$\mathcal{A}$', fontsize=22, fontweight='bold', 
+    #          ha='center', va='center', color='black')
+     
+     # Label "A'" between the two curves (in the hatched region)
+     label_idx = len(betas) // 2
+     Aprime_x = betas[label_idx]
+     Aprime_y = (av_bcetrain_true[label_idx] + av_bcetrain_random[label_idx]) / 2.5
+    #  ax.text(Aprime_x, Aprime_y, r"$\mathcal{A}'$", fontsize=22, fontweight='bold', 
+    #          ha='center', va='center', color='black')
+     
+     ax.spines['top'].set_visible(False)
+     ax.spines['right'].set_visible(False)
+     ax.set_xlabel('inverse temperature', fontsize=18)
+     ax.set_ylabel('mean training loss', fontsize=16)
+     ax.legend(loc='upper right', fontsize=12, framealpha=0.9)
+     ax.set_xlim([0, 8010])
+     ax.set_ylim([0, 0.55])
+
+    # Add minor ticks for better readability
+     ax.minorticks_on()
+     ax.tick_params(which='minor', length=3, color='gray')
+     ax.tick_params(which='major', length=6, width=1.2)
+    
+    # Ensure directory exists
+     os.makedirs('newplots', exist_ok=True)
+    
+    # Generate filename
+     if trueLabels == 1:
+        csv_filename = truefilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        elif display == 0:
+            csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        if calibration == 0:
+            csv_filename = csv_filename + '_nocal'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+     else:
+        csv_filename = randomfilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        elif display == 0:
+            csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        if calibration == 0:
+            csv_filename = csv_filename + '_nocal'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+    
+    # Save with high quality
+     plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    
+     plt.tight_layout()
+     plt.show()
+
+ 
+betas, bcetrain, bcetest, train01, test01, av_bcetrain_random, av_bcetest,\
+        av_train01_random, av_test01, samplesize = main( randomfilename )
+betas, bcetrain, bcetest, train01, test01, av_bcetrain_true, av_bcetest,\
+        av_train01_true, av_test01, samplesize = main( truefilename )
+
 if display == 1:
     show01 (showkls) 
-else:
+elif display == 0:
     showbce (showkls)
+elif display == 2:
+    showarea (av_bcetrain_true, av_bcetrain_random)
