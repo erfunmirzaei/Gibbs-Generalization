@@ -387,7 +387,8 @@ def initialize_nn_weights_gaussian(model: nn.Module, sigma: float, seed: int = 4
         This function modifies the model in-place and also returns it for convenience.
         Only parameters with requires_grad=True are initialized.
     """
+    gen = torch.Generator().manual_seed(seed)
     for param in model.parameters():
         if param.requires_grad:
-            nn.init.normal_(param.data, mean=0.0, std=sigma, generator=torch.Generator().manual_seed(seed))
+            nn.init.normal_(param.data, mean=0.0, std=sigma, generator=gen)
     return model

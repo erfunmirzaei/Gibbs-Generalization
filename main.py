@@ -5,6 +5,9 @@ This script orchestrates the complete ULA or SGLD experiment, testing different 
 and computing PAC-Bayesian generalization bounds for the MNIST or CIFAR-10 datasets.
 """
 
+import torch
+import numpy as np
+import random
 from dataset import (get_mnist_binary_dataloaders_partial_random_labels,
                      get_cifar10_binary_dataloaders_partial_random_labels,
                      get_synth_dataloaders, get_synth_dataloaders_random_labels,)
@@ -15,6 +18,7 @@ from training import run_beta_experiments
 TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 0  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
+SEED = 42  # Random seed for reproducibility (change this to run different seeds)
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -30,6 +34,18 @@ CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 
 def main():
     """Main experiment function."""
+    # Set global random seeds for reproducibility
+    torch.manual_seed(SEED)
+    np.random.seed(SEED)
+    random.seed(SEED)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(SEED)
+        torch.cuda.manual_seed_all(SEED)
+    # For fully deterministic behavior on CUDA (may reduce performance)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print(f"Random seed set to: {SEED}")
+
     device = 'cpu'  # cuda:5
     # Define beta values to test
     if TEST_MODE:
@@ -146,10 +162,11 @@ def main():
         eps=1e-7,
         test_mode=TEST_MODE,
         add_grad_norm=True,
-        add_noise=True,  # If False, it becomes (S)GD
+        add_noise=False,  # If False, it becomes (S)GD
         sgld_num=1,  # Choose SGLD variant: 1 or 2
         annealed=False,  # Whether to use annealed SGLD
         min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
+        seed=SEED,
     )
     
     print(f"\n{'='*70}")

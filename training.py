@@ -10,6 +10,7 @@ import torch.optim as optim
 import time
 import os
 import csv
+import random
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
@@ -1266,7 +1267,8 @@ def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps,
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_steps,
                          alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, 
-                         sgld_num = 1, annealed = False, add_noise=True, save_every=1, min_steps_first_beta=None):
+                         sgld_num = 1, annealed = False, add_noise=True, save_every=1, min_steps_first_beta=None,
+                         seed=42):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -1302,6 +1304,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         save_every (int, optional): Save checkpoint frequency. Defaults to 1.
         min_steps_first_beta (int, optional): Minimum steps for first beta in annealing (if annealed=True).
             If None, uses min_steps for all betas. Should be larger than min_steps.
+        seed (int, optional): Random seed for reproducibility of training. Defaults to 42.
     
     Returns:
         None: Results are saved to CSV files with experimental metadata.
@@ -1317,6 +1320,15 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         print(f"Added beta=0 for proper generalization bound computation")    
 
     print(f"🆕 Starting new experiment")
+
+    # Set random seeds for reproducibility of training
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+    print(f"Training random seed set to: {seed}")
 
     list_train_BCE_losses = []
     list_test_BCE_losses = []
@@ -1418,6 +1430,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix += f"{loss.upper()}"
         filename_prefix += "_ANNEALED"  # Mark as annealed
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename_prefix += f"_S{seed}"
         filename_prefix += f"_{timestamp}"
         if test_mode:
             filename_prefix += "_TEST"
@@ -1443,6 +1456,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - alpha_stop: {alpha_stop}\n" \
         f"  - eta: {eta}\n" \
         f"  - eps: {eps}\n" \
+        f"  - Seed: {seed}\n" \
         f"  - Number of epochs per beta: {list_num_epochs_per_beta}\n"
 
         csv_path = save_moving_average_losses_to_csv(
@@ -1520,6 +1534,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 alpha_stop=alpha_stop,
                 eta=eta,
                 eps=eps,
+                add_noise=add_noise,
             )
             
 
@@ -1578,6 +1593,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             filename_prefix += f"LR{current_a0}".replace('.', '')
             filename_prefix += f"{loss.upper()}"
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            filename_prefix += f"_S{seed}"
             filename_prefix += f"_{timestamp}"
             if test_mode:
                 filename_prefix += f"_TEST"
@@ -1603,6 +1619,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             f" -  alpha_stop: {alpha_stop}\n" \
             f" -  eta: {eta}\n" \
             f" -  eps: {eps}\n" \
+            f" -  Seed: {seed}\n" \
             f" -  Gradient norm: {list_EMA_grad_norm}\n" \
             f" -  Number of epochs per beta: {list_num_epochs_per_beta}\n" \
             f" -  Variance of EMA Train BCE losses: {list_EMA_var_train_BCE_losses}\n" \
@@ -1699,6 +1716,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix += f"{loss.upper()}"
         filename_prefix += "_ANNEALED"  # Mark as annealed
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename_prefix += f"_S{seed}"
         filename_prefix += f"_{timestamp}"
         if test_mode:
             filename_prefix += "_TEST"
@@ -1724,6 +1742,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - alpha_stop: {alpha_stop}\n" \
         f"  - eta: {eta}\n" \
         f"  - eps: {eps}\n" \
+        f"  - Seed: {seed}\n" \
         f"  - Number of epochs per beta: {list_num_epochs_per_beta}\n"
 
         csv_path = save_moving_average_losses_to_csv(
