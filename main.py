@@ -16,7 +16,7 @@ from training import run_beta_experiments
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = 0  # Percentage of randomly labeled data 
+USE_RANDOM_LABELS = 0.0  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
 SEED = 42  # Random seed for reproducibility (change this to run different seeds)
 
@@ -149,7 +149,7 @@ def main():
         sigma_gauss_prior=5.0,
         device=device,
         n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-        width=500, # Width of each hidden layer, only for fully connected networks
+        width=16, # Width of each hidden layer, only for fully connected networks
         dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
@@ -159,7 +159,7 @@ def main():
         alpha_average=0.01,
         alpha_stop=0.0025,
         eta=36,  # This is used only if you want to schedule the step size (In the current version it is not used)
-        eps=1e-7,
+        eps=-1e-7,
         test_mode=TEST_MODE,
         add_grad_norm=True,
         add_noise=False,  # If False, it becomes (S)GD

@@ -649,8 +649,8 @@ def create_mnist_binary_dataset_partial_random_labels(
     # Flip labels with probability p
     train_flip_mask = torch.rand(len(train_data)) < p
     test_flip_mask = torch.rand(len(test_data)) < p
-    train_final_labels = torch.where(train_flip_mask, 1 - train_original_labels, train_original_labels)
-    test_final_labels = torch.where(test_flip_mask, 1 - test_original_labels, test_original_labels)
+    train_final_labels = torch.where(train_flip_mask, torch.randint(0, 2, train_original_labels.shape), train_original_labels)
+    test_final_labels = torch.where(test_flip_mask, torch.randint(0, 2, test_original_labels.shape), test_original_labels)
 
     # Create new datasets with random labels
     train_dataset_random = TensorDataset(train_data, train_final_labels)
@@ -1246,8 +1246,8 @@ def create_cifar10_binary_dataset_partial_random_labels(
     train_flip_mask = torch.rand(len(train_data)) < p  
     test_flip_mask = torch.rand(len(test_data)) < p
 
-    train_final_labels = torch.where(train_flip_mask, 1 - train_original_labels, train_original_labels)
-    test_final_labels = torch.where(test_flip_mask, 1 - test_original_labels, test_original_labels)
+    train_final_labels = torch.where(train_flip_mask,torch.randint(0, 2, train_original_labels.shape), train_original_labels)
+    test_final_labels = torch.where(test_flip_mask, torch.randint(0, 2, test_original_labels.shape), test_original_labels)
 
     # Create new datasets with partially random labels
     train_dataset_random = TensorDataset(train_data, train_final_labels)
