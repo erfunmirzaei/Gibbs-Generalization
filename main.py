@@ -111,7 +111,7 @@ def main():
                 n_train_per_group=1000,
                 n_test_per_group=5000,
                 batch_size=2000,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                random_seed=SEED,  # Fixed seed for consistent dataset
                 normalize=True
         )
 
@@ -122,7 +122,7 @@ def main():
             n_train_per_group=1000,
             n_test_per_group=5000,
             batch_size=2000,
-            random_seed=420001,
+            random_seed=SEED,
         )
 
     elif DATASET_TYPE == 'synth':
@@ -130,15 +130,15 @@ def main():
         if USE_RANDOM_LABELS:
             train_loader, test_loader = get_synth_dataloaders_random_labels(
                 batch_size=50,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                random_seed=SEED,  # Fixed seed for consistent dataset
             )
         else:
             train_loader, test_loader = get_synth_dataloaders(
                 batch_size=50,
-                random_seed=42001,  # Fixed seed for consistent dataset
+                random_seed=SEED,  # Fixed seed for consistent dataset
             )
 
-    print(f"Dataset created with fixed random seed (42001) for consistency across all experiments")
+    print(f"Dataset created with fixed random seed ({SEED}) for consistency across all experiments")
     
     # Run the experiment with optimizations
     run_beta_experiments(
