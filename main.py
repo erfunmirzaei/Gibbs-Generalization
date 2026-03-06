@@ -149,7 +149,7 @@ def main():
         sigma_gauss_prior=5.0,
         device=device,
         n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-        width=8, # Width of each hidden layer, only for fully connected networks
+        width=4, # Width of each hidden layer, only for fully connected networks
         dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
