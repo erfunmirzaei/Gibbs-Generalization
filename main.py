@@ -149,7 +149,7 @@ def main():
         sigma_gauss_prior=5.0,
         device=device,
         n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-        width=4, # Width of each hidden layer, only for fully connected networks
+        width=8, # Width of each hidden layer, only for fully connected networks
         dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
         use_random_labels=USE_RANDOM_LABELS,
         l_max=4.0,
@@ -162,7 +162,7 @@ def main():
         eps=-1e-7,
         test_mode=TEST_MODE,
         add_grad_norm=True,
-        add_noise=False,  # If False, it becomes (S)GD
+        add_noise=True,  # If False, it becomes (S)GD
         sgld_num=1,  # Choose SGLD variant: 1 or 2
         annealed=False,  # Whether to use annealed SGLD
         min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
