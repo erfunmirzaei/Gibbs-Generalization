@@ -250,7 +250,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
 # MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
 
-truefilename, randomfilename = "cML1S2k001B.csv", "rML1S2k001B.csv"
+truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE", "MCL1W8ULA2kLR001SAVAGE_S42_20260310-134833"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
