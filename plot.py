@@ -12,8 +12,7 @@ def read_csv_2_lists(csv_file_path):
         list 
     """     
     if not os.path.exists(csv_file_path):
-        print(f"File not found: {csv_file_path}")
-        return []
+        raise FileNotFoundError(f"CSV file not found: {csv_file_path}")
     
     # Initialize data structure
     n_samples = []
@@ -74,7 +73,9 @@ def read_csv_2_lists(csv_file_path):
 def main(csv_filename):
     script_dir = os.path.dirname(os.path.abspath(__file__))
 
-   
+    if not csv_filename.endswith(".csv"):
+        csv_filename = f"{csv_filename}.csv"
+
     csv_path = os.path.join(script_dir, "csv_EMA", csv_filename)
     # Read the CSV files
     beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,\
