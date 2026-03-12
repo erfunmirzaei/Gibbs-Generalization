@@ -15,7 +15,7 @@ from training import run_beta_experiments
 
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
-TEST_MODE = False  # Set to True for quick test, False for full experiment
+TEST_MODE = True  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
 SEED = 42  # Random seed for reproducibility (change this to run different seeds)
@@ -55,8 +55,8 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [ 125]  # Minimal set for testing
-            a0 = {0: 0.01, 125: 0.01}
+            beta_values = [ 1000, 8000]  # Minimal set for testing
+            a0 = {0: 0.01, 1000: 0.01, 8000: 0.01}
 
         elif DATASET_TYPE == 'cifar10':
             beta_values = [16000]  # Minimal set for testing
