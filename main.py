@@ -16,7 +16,7 @@ from training import run_beta_experiments
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = 0.75  # Percentage of randomly labeled data 
+USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
 SEED = 42  # Random seed for reproducibility (change this to run different seeds)
 
@@ -157,7 +157,7 @@ def main():
         test_loader=test_loader,
         min_steps=2000,  # Minimum steps for subsequent betas (or all betas if not annealing)
         alpha_average=0.01,
-        alpha_stop=0.0025,
+        alpha_stop=0.00025,
         eta=36,  # This is used only if you want to schedule the step size (In the current version it is not used)
         eps=-1e-7,
         test_mode=TEST_MODE,
