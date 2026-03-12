@@ -8,6 +8,8 @@ and computing PAC-Bayesian generalization bounds for the MNIST or CIFAR-10 datas
 import torch
 import numpy as np
 import random
+import csv
+from datetime import datetime
 from dataset import (get_mnist_binary_dataloaders_partial_random_labels,
                      get_cifar10_binary_dataloaders_partial_random_labels,
                      get_synth_dataloaders, get_synth_dataloaders_random_labels,)
@@ -18,7 +20,8 @@ from training import run_beta_experiments
 TEST_MODE = True  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
-SEED = 42  # Random seed for reproducibility (change this to run different seeds)
+SEEDS = [42, 52, 62]  # Random seeds for stability analysis
+USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
 # Can be either:
@@ -32,19 +35,88 @@ MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
 # - Grouped classes: [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]] for vehicles vs animals
 CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 
-def main():
-    """Main experiment function."""
-    # Set global random seeds for reproducibility
-    torch.manual_seed(SEED)
-    np.random.seed(SEED)
-    random.seed(SEED)
+
+def set_global_seed(seed):
+    """Set random seed across torch/numpy/python for reproducibility."""
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
     if torch.cuda.is_available():
-        torch.cuda.manual_seed(SEED)
-        torch.cuda.manual_seed_all(SEED)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
     # For fully deterministic behavior on CUDA (may reduce performance)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    print(f"Random seed set to: {SEED}")
+
+
+def create_dataloaders(dataset_seed):
+    """Create dataset-specific train/test dataloaders."""
+    if DATASET_TYPE == 'mnist':
+        return get_mnist_binary_dataloaders_partial_random_labels(
+            classes=MNIST_CLASSES,
+            p=USE_RANDOM_LABELS,
+            n_train_per_group=1000,
+            n_test_per_group=5000,
+            batch_size=2000,
+            random_seed=dataset_seed,
+            normalize=True
+        )
+
+    if DATASET_TYPE == 'cifar10':
+        return get_cifar10_binary_dataloaders_partial_random_labels(
+            classes=CIFAR10_CLASSES,
+            p=USE_RANDOM_LABELS,
+            n_train_per_group=1000,
+            n_test_per_group=5000,
+            batch_size=2000,
+            random_seed=dataset_seed,
+        )
+
+    if DATASET_TYPE == 'synth':
+        if USE_RANDOM_LABELS:
+            return get_synth_dataloaders_random_labels(
+                batch_size=50,
+                random_seed=dataset_seed,
+            )
+
+        return get_synth_dataloaders(
+            batch_size=50,
+            random_seed=dataset_seed,
+        )
+
+    raise ValueError(f"Unsupported DATASET_TYPE: {DATASET_TYPE}")
+
+
+def save_seed_stability_summary(seed_results):
+    """Save compact stability analysis table across seeds."""
+    if not seed_results:
+        return None
+
+    rows = []
+    for result in seed_results:
+        for csv_path in result["csv_paths"]:
+            rows.append([
+                result["seed"],
+                result["dataset_seed"],
+                csv_path,
+            ])
+
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    summary_path = f"csv_EMA/SEED_STABILITY_{DATASET_TYPE.upper()}_{timestamp}.csv"
+    with open(summary_path, 'w', newline='') as csv_file:
+        writer = csv.writer(csv_file)
+        writer.writerow(["seed", "dataset_seed", "result_csv_path"])
+        writer.writerows(rows)
+
+    return summary_path
+
+def main():
+    """Main experiment function."""
+    if not SEEDS:
+        raise ValueError("SEEDS must contain at least one seed value")
+
+    set_global_seed(SEEDS[0])
+    print(f"Seed list: {SEEDS}")
 
     device = 'cpu'  # cuda:5
     # Define beta values to test
@@ -102,72 +174,56 @@ def main():
     print(f"Beta values: {beta_values}")
     print(f"{'='*70}")
 
-    # Create dataloaders once (same dataset for all repetitions and beta values)
-    print("\nCreating dataset and dataloaders...")
-    if DATASET_TYPE == 'mnist':
-        train_loader, test_loader = get_mnist_binary_dataloaders_partial_random_labels(
-                classes=MNIST_CLASSES,
-                p= USE_RANDOM_LABELS,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=2000,
-                random_seed=SEED,  # Fixed seed for consistent dataset
-                normalize=True
+    seed_results = []
+
+    for seed in SEEDS:
+        dataset_seed = SEEDS[0] if USE_SAME_DATASET_ACROSS_SEEDS else seed
+        print("\n" + "-" * 70)
+        print(f"Running seed {seed} (dataset_seed={dataset_seed})")
+        print("-" * 70)
+
+        set_global_seed(seed)
+
+        print("\nCreating dataset and dataloaders...")
+        train_loader, test_loader = create_dataloaders(dataset_seed)
+
+        csv_paths = run_beta_experiments(
+            loss='SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
+            beta_values=beta_values,
+            a0=a0,  # Now supports dict, callable, or float
+            b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
+            sigma_gauss_prior=5.0,
+            device=device,
+            n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
+            width=500, # Width of each hidden layer, only for fully connected networks
+            dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
+            use_random_labels=USE_RANDOM_LABELS,
+            l_max=4.0,
+            train_loader=train_loader,
+            test_loader=test_loader,
+            min_steps=2000,  # Minimum steps for subsequent betas (or all betas if not annealing)
+            alpha_average=0.01,
+            alpha_stop=0.00025,
+            eta=36,  # This is used only if you want to schedule the step size (In the current version it is not used)
+            eps=-1e-7,
+            test_mode=TEST_MODE,
+            add_grad_norm=True,
+            add_noise=True,  # If False, it becomes (S)GD
+            sgld_num=1,  # Choose SGLD variant: 1 or 2
+            annealed=False,  # Whether to use annealed SGLD
+            min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
+            seed=seed,
         )
 
-    elif DATASET_TYPE == 'cifar10':
-        train_loader, test_loader = get_cifar10_binary_dataloaders_partial_random_labels(
-            classes=CIFAR10_CLASSES,
-            p=USE_RANDOM_LABELS,
-            n_train_per_group=1000,
-            n_test_per_group=5000,
-            batch_size=2000,
-            random_seed=SEED,
-        )
+        seed_results.append({
+            "seed": seed,
+            "dataset_seed": dataset_seed,
+            "csv_paths": csv_paths or [],
+        })
 
-    elif DATASET_TYPE == 'synth':
-
-        if USE_RANDOM_LABELS:
-            train_loader, test_loader = get_synth_dataloaders_random_labels(
-                batch_size=50,
-                random_seed=SEED,  # Fixed seed for consistent dataset
-            )
-        else:
-            train_loader, test_loader = get_synth_dataloaders(
-                batch_size=50,
-                random_seed=SEED,  # Fixed seed for consistent dataset
-            )
-
-    print(f"Dataset created with fixed random seed ({SEED}) for consistency across all experiments")
-    
-    # Run the experiment with optimizations
-    run_beta_experiments(
-        loss = 'SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
-        beta_values=beta_values,
-        a0=a0,  # Now supports dict, callable, or float
-        b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
-        sigma_gauss_prior=5.0,
-        device=device,
-        n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-        width=500, # Width of each hidden layer, only for fully connected networks
-        dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
-        use_random_labels=USE_RANDOM_LABELS,
-        l_max=4.0,
-        train_loader=train_loader, 
-        test_loader=test_loader,
-        min_steps=2000,  # Minimum steps for subsequent betas (or all betas if not annealing)
-        alpha_average=0.01,
-        alpha_stop=0.00025,
-        eta=36,  # This is used only if you want to schedule the step size (In the current version it is not used)
-        eps=-1e-7,
-        test_mode=TEST_MODE,
-        add_grad_norm=True,
-        add_noise=True,  # If False, it becomes (S)GD
-        sgld_num=1,  # Choose SGLD variant: 1 or 2
-        annealed=False,  # Whether to use annealed SGLD
-        min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
-        seed=SEED,
-    )
+    summary_path = save_seed_stability_summary(seed_results)
+    if summary_path is not None:
+        print(f"\nSeed stability summary saved to: {summary_path}")
     
     print(f"\n{'='*70}")
     print("EXPERIMENT COMPLETED!")

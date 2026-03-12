@@ -122,6 +122,17 @@ Generated plots are saved in `newplots/` with corresponding names:
 python main.py
 ```
 
+### Stability Analysis Across Random Seeds
+You can now run multiple seeds in one execution from [main.py](main.py):
+
+- Set `SEEDS = [42, 52, 62]` (or any list of seeds).
+- Set `USE_SAME_DATASET_ACROSS_SEEDS = True` to keep dataset fixed and vary only training randomness.
+- Set `USE_SAME_DATASET_ACROSS_SEEDS = False` to vary both dataset and training randomness.
+
+Outputs:
+- Per-seed experiment CSV files in `csv_EMA/` (filenames include `_S{seed}`)
+- One stability index file: `csv_EMA/SEED_STABILITY_<DATASET>_<timestamp>.csv`
+
 ## Algorithm and Parameter Guide
 
 ### Beta (β) Parameter - Inverse Temperature

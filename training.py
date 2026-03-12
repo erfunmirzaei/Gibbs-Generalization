@@ -1307,7 +1307,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         seed (int, optional): Random seed for reproducibility of training. Defaults to 42.
     
     Returns:
-        None: Results are saved to CSV files with experimental metadata.
+        list: Paths to CSV files generated during the experiment.
     
     Note:
         If beta=0 is not in beta_values, it will be automatically added for proper
@@ -1341,6 +1341,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
     list_EMA_grad_norm = []
     list_EMA_var_train_BCE_losses = []
     list_EMA_var_test_BCE_losses = []
+    saved_csv_paths = []
 
     print(f"\nConfiguration:")    
     print(f"Learning rate (a0) per beta:")
@@ -1473,6 +1474,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             len(train_loader.dataset),
             summary_string
         )
+        saved_csv_paths.append(csv_path)
         print(f"\n✅ Annealed SGLD completed! Results saved to: {csv_path}")
 
     elif sgld_num == 1 and not annealed:  
@@ -1639,6 +1641,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 len(train_loader.dataset),
                 summary_string
             )
+            saved_csv_paths.append(csv_path)
     
     elif sgld_num == 0:
         # In annealed mode, we use a single model and transition between betas
@@ -1759,6 +1762,9 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             len(train_loader.dataset),
             summary_string
         )
+        saved_csv_paths.append(csv_path)
         print(f"\n✅ Annealed SGLD completed! Results saved to: {csv_path}")
+
+    return saved_csv_paths
 
 
