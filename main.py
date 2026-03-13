@@ -20,7 +20,8 @@ from training import run_beta_experiments
 TEST_MODE = True  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
-SEEDS = [42, 52, 62]  # Random seeds for stability analysis
+SEEDS = [72, 82, 92]  # Random seeds for stability analysis
+DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist')
@@ -177,7 +178,7 @@ def main():
     seed_results = []
 
     for seed in SEEDS:
-        dataset_seed = SEEDS[0] if USE_SAME_DATASET_ACROSS_SEEDS else seed
+        dataset_seed = DATASET_SEED
         print("\n" + "-" * 70)
         print(f"Running seed {seed} (dataset_seed={dataset_seed})")
         print("-" * 70)
