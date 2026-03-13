@@ -17,10 +17,10 @@ from training import run_beta_experiments
 
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
-TEST_MODE = True  # Set to True for quick test, False for full experiment
+TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
 DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
-SEEDS = [72, 82, 92]  # Random seeds for stability analysis
+SEEDS = [42]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
