@@ -297,8 +297,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 f'EMA Train Zero-One Loss: {mean(avg_train_zero_one_losses):.4f}, EMA Test Zero-One Loss: {mean(avg_test_zero_one_losses):.4f}'
                 )
 
-    # while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_steps / len(train_loader)) and beta > 0.0:
-    for epoch in range(20000):  # Large max epoch, we will break based on EMA convergence
+    while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_steps / len(train_loader)) and beta > 0.0:
+    # while epoch < 20000 and beta > 0.0:  # Large max epoch, we will break based on EMA convergence
         # Training phase
         model.train()
         train_loss_total = 0.0
@@ -1669,6 +1669,9 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             elif n_hidden_layers == 'V':
                 model = VGG16_CIFAR(num_classes=1)
         
+        # Initialize model weights from Gaussian prior
+        # model = initialize_nn_weights_gaussian(model, sigma=sigma_gauss_prior, seed=seed)
+
         # Run annealed training (returns results for all betas)
         (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
          list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, 
