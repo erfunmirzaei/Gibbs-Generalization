@@ -1269,7 +1269,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_steps,
                          alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, 
                          sgld_num = 1, annealed = False, add_noise=True, save_every=1, min_steps_first_beta=None,
-                         seed=42):
+                         seed=42, selected_classes=None):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -1306,6 +1306,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         min_steps_first_beta (int, optional): Minimum steps for first beta in annealing (if annealed=True).
             If None, uses min_steps for all betas. Should be larger than min_steps.
         seed (int, optional): Random seed for reproducibility of training. Defaults to 42.
+        selected_classes (list, optional): Chosen class ids/groups used to build the dataset.
     
     Returns:
         list: Paths to CSV files generated during the experiment.
@@ -1355,6 +1356,19 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
     if add_noise == False:
         extended_beta_values = [extended_beta_values[-1]]  
 
+    if dataset_type == 'cifar10':
+        dataset_name = 'CIFAR-10'
+    elif dataset_type == 'cifar100':
+        dataset_name = 'CIFAR-100'
+    elif dataset_type == 'mnist':
+        dataset_name = 'MNIST'
+    elif dataset_type == 'synth':
+        dataset_name = 'SYNTH'
+    else:
+        dataset_name = str(dataset_type)
+
+    selected_classes_str = str(selected_classes) if selected_classes is not None else 'N/A'
+
     if sgld_num == 1 and annealed:
         # In annealed mode, we use a single model and transition between betas
         print(f"\n🔥 Running ANNEALED SGLD with {len(extended_beta_values)} beta values")
@@ -1370,7 +1384,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
-        elif dataset_type == 'cifar10':
+        elif dataset_type in ('cifar10', 'cifar100'):
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 2:
@@ -1408,7 +1422,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix = ""
         if dataset_type == 'mnist':
             filename_prefix = "M"
-        elif dataset_type == 'cifar10':
+        elif dataset_type in ('cifar10', 'cifar100'):
             filename_prefix = "C"
         else:
             filename_prefix = "S"
@@ -1445,6 +1459,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - Number of hidden layers: {n_hidden_layers}\n" \
         f"  - Width of hidden layers: {width}\n" \
         f"  - Dataset type: {dataset_type}\n" \
+        f"  - Dataset name: {dataset_name}\n" \
+        f"  - Selected classes/groups: {selected_classes_str}\n" \
         f"  - Random labels: {use_random_labels}\n" \
         f"  - Training set size: {len(train_loader.dataset)}\n" \
         f"  - Test set size: {len(test_loader.dataset)}\n" \
@@ -1500,7 +1516,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 elif n_hidden_layers == 'L':
                     model = LeNet5(num_classes=1)
 
-            elif dataset_type == 'cifar10':
+            elif dataset_type in ('cifar10', 'cifar100'):
                 if n_hidden_layers == 1:
                     model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
                 elif n_hidden_layers == 2:
@@ -1567,7 +1583,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             filename_prefix = ""
             if dataset_type == 'mnist':
                 filename_prefix = "M"
-            elif dataset_type == 'cifar10':
+            elif dataset_type in ('cifar10', 'cifar100'):
                 filename_prefix = "C"
             else:
                 filename_prefix = "S"
@@ -1609,6 +1625,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             f"  - Number of hidden layers: {n_hidden_layers}\n" \
             f"  - Width of hidden layers: {width}\n" \
             f"  - Dataset type: {dataset_type}\n" \
+            f"  - Dataset name: {dataset_name}\n" \
+            f"  - Selected classes/groups: {selected_classes_str}\n" \
             f"  - Random labels: {use_random_labels}\n" \
             f"  - Training set size: {len(train_loader.dataset) if train_loader else 'N/A'}\n" \
             f"  - Test set size: {len(test_loader.dataset) if test_loader else 'N/A'}\n" \
@@ -1659,7 +1677,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
-        elif dataset_type == 'cifar10':
+        elif dataset_type in ('cifar10', 'cifar100'):
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 2:
@@ -1699,7 +1717,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         if dataset_type == 'mnist':
             filename_prefix = "M"
         
-        elif dataset_type == 'cifar10':
+        elif dataset_type in ('cifar10', 'cifar100'):
             filename_prefix = "C"
         else:
             filename_prefix = "S"
@@ -1736,6 +1754,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         f"  - Number of hidden layers: {n_hidden_layers}\n" \
         f"  - Width of hidden layers: {width}\n" \
         f"  - Dataset type: {dataset_type}\n" \
+        f"  - Dataset name: {dataset_name}\n" \
+        f"  - Selected classes/groups: {selected_classes_str}\n" \
         f"  - Random labels: {use_random_labels}\n" \
         f"  - Training set size: {len(train_loader.dataset)}\n" \
         f"  - Test set size: {len(test_loader.dataset)}\n" \

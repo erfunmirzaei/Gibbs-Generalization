@@ -1,6 +1,6 @@
 # Gibbs Generalization Bound Experiments
 
-A comprehensive implementation of SGLD (Stochastic Gradient Langevin Dynamics) and ULA (Unadjusted Langevin Algorithm) experiments for computing PAC-Bayesian generalization bounds on MNIST and CIFAR-10 datasets.
+A comprehensive implementation of SGLD (Stochastic Gradient Langevin Dynamics) and ULA (Unadjusted Langevin Algorithm) experiments for computing PAC-Bayesian generalization bounds on MNIST, CIFAR-10, and CIFAR-100 datasets.
 
 ## Project Structure
 
@@ -51,7 +51,7 @@ The code has been organized into the following modules for better maintainabilit
 ### Main Scripts
 
 - **`main.py`** - Main experiment script
-  - Orchestrates complete SGLD/ULA experiments on MNIST or CIFAR-10
+  - Orchestrates complete SGLD/ULA experiments on MNIST, CIFAR-10, or CIFAR-100
   - Configurable for test mode vs full experiment
   - Support for both normal and random label experiments
   - Automatic dataset selection and parameter configuration

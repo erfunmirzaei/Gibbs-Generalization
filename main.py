@@ -2,7 +2,7 @@
 Main experiment script for the Gibbs generalization bound experiments.
 
 This script orchestrates the complete ULA or SGLD experiment, testing different beta values
-and computing PAC-Bayesian generalization bounds for the MNIST or CIFAR-10 datasets.
+and computing PAC-Bayesian generalization bounds for the MNIST, CIFAR-10, or CIFAR-100 datasets.
 """
 
 import torch
@@ -12,14 +12,15 @@ import csv
 from datetime import datetime
 from dataset import (get_mnist_binary_dataloaders_partial_random_labels,
                      get_cifar10_binary_dataloaders_partial_random_labels,
+                     get_cifar100_binary_dataloaders_partial_random_labels,
                      get_synth_dataloaders, get_synth_dataloaders_random_labels,)
 from training import run_beta_experiments
 
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
-TEST_MODE = True  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = 0  # Percentage of randomly labeled data 
-DATASET_TYPE = 'mnist'  # 'synth', 'mnist' or 'cifar10'
+TEST_MODE = False  # Set to True for quick test, False for full experiment
+USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
+DATASET_TYPE = 'cifar100'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
 SEEDS = [42, 52, 62, 72, 82, 92]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
@@ -35,6 +36,12 @@ MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
 # - Individual classes: [0, 1] for airplane vs automobile
 # - Grouped classes: [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]] for vehicles vs animals
 CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
+
+# CIFAR-100 classes for binary classification (only used when DATASET_TYPE='cifar100')
+# Can be either:
+# - Individual classes: [0, 1]
+# - Grouped classes: [[0, 1, 2, 3, 4], [50, 51, 52, 53, 54]]
+CIFAR100_CLASSES = [0, 1]  # For simplicity, we use two individual classes (apple vs aquarium_fish)
 
 
 def set_global_seed(seed):
@@ -70,6 +77,16 @@ def create_dataloaders(dataset_seed):
             n_train_per_group=1000,
             n_test_per_group=5000,
             batch_size=2000,
+            random_seed=dataset_seed,
+        )
+
+    if DATASET_TYPE == 'cifar100':
+        return get_cifar100_binary_dataloaders_partial_random_labels(
+            classes=CIFAR100_CLASSES,
+            p=USE_RANDOM_LABELS,
+            n_train_per_group=500,
+            n_test_per_group=100,
+            batch_size=1000,
             random_seed=dataset_seed,
         )
 
@@ -131,7 +148,7 @@ def main():
             beta_values = [ 2000]  # Minimal set for testing
             a0 = {0: 0.01, 2000: 0.01}
 
-        elif DATASET_TYPE == 'cifar10':
+        elif DATASET_TYPE in ('cifar10', 'cifar100'):
             beta_values = [16000]  # Minimal set for testing
             a0 = {0: 0.01, 16000: 0.01}
 
@@ -158,7 +175,7 @@ def main():
             #a0 = {0:0.01, 1000:0.01, 2000:0.01, 3000:0.01, 4000:0.01, 5000:0.01, 6000:0.01, 7000:0.01, 8000:0.01, 9000:0.01, 10000:0.01, 11000:0.01, 12000:0.01, 13000:0.01, 14000:0.01, 15000:0.01, 16000:0.01}
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
-        elif DATASET_TYPE == 'cifar10':
+        elif DATASET_TYPE in ('cifar10', 'cifar100'):
             beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
             # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
             # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
@@ -188,6 +205,15 @@ def main():
         print("\nCreating dataset and dataloaders...")
         train_loader, test_loader = create_dataloaders(dataset_seed)
 
+        if DATASET_TYPE == 'mnist':
+            selected_classes = MNIST_CLASSES
+        elif DATASET_TYPE == 'cifar10':
+            selected_classes = CIFAR10_CLASSES
+        elif DATASET_TYPE == 'cifar100':
+            selected_classes = CIFAR100_CLASSES
+        else:
+            selected_classes = None
+
         csv_paths = run_beta_experiments(
             loss='SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
             beta_values=beta_values,
@@ -195,7 +221,7 @@ def main():
             b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
             sigma_gauss_prior=5.0,
             device=device,
-            n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
+            n_hidden_layers=2,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
             width=500, # Width of each hidden layer, only for fully connected networks
             dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
             use_random_labels=USE_RANDOM_LABELS,
@@ -209,11 +235,12 @@ def main():
             eps=-1e-7,
             test_mode=TEST_MODE,
             add_grad_norm=True,
-            add_noise=True,  # If False, it becomes (S)GD
+            add_noise=False,  # If False, it becomes (S)GD
             sgld_num=1,  # Choose SGLD variant: 1 or 2
             annealed=False,  # Whether to use annealed SGLD
             min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
             seed=seed,
+            selected_classes=selected_classes,
         )
 
         seed_results.append({
