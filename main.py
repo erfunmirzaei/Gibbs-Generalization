@@ -19,9 +19,9 @@ from training import run_beta_experiments
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
+USE_RANDOM_LABELS = 0  # Percentage of randomly labeled data 
 DATASET_TYPE = 'cifar100'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
-SEEDS = [42, 52, 62, 72, 82, 92]  # Random seeds for stability analysis
+SEEDS = [42]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
@@ -41,7 +41,7 @@ CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 # Can be either:
 # - Individual classes: [0, 1]
 # - Grouped classes: [[0, 1, 2, 3, 4], [50, 51, 52, 53, 54]]
-CIFAR100_CLASSES = [0, 1]  # For simplicity, we use two individual classes (apple vs aquarium_fish)
+CIFAR100_CLASSES = [2, 50]  # For simplicity, we use two individual classes (apple vs aquarium_fish)
 
 
 def set_global_seed(seed):
@@ -178,8 +178,8 @@ def main():
         elif DATASET_TYPE in ('cifar10', 'cifar100'):
             beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
             # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
-            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
+            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
             # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
         elif DATASET_TYPE == 'synth':
