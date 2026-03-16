@@ -18,7 +18,7 @@ from training import run_beta_experiments
 
 # TODO: Check the initial values effect for M_t when using BCE
 # Configuration flags
-TEST_MODE = False  # Set to True for quick test, False for full experiment
+TEST_MODE = True  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 0  # Percentage of randomly labeled data 
 DATASET_TYPE = 'cifar100'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
 SEEDS = [42]  # Random seeds for stability analysis
@@ -41,7 +41,7 @@ CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 # Can be either:
 # - Individual classes: [0, 1]
 # - Grouped classes: [[0, 1, 2, 3, 4], [50, 51, 52, 53, 54]]
-CIFAR100_CLASSES = [2, 50]  # For simplicity, we use two individual classes (apple vs aquarium_fish)
+CIFAR100_CLASSES = [0, 1]  # For simplicity, we use two individual classes (apple vs aquarium_fish)
 
 
 def set_global_seed(seed):
@@ -149,8 +149,8 @@ def main():
             a0 = {0: 0.01, 2000: 0.01}
 
         elif DATASET_TYPE in ('cifar10', 'cifar100'):
-            beta_values = [16000]  # Minimal set for testing
-            a0 = {0: 0.01, 16000: 0.01}
+            beta_values = [128, 250, 500, 1000]  # Minimal set for testing
+            a0 = {0: 0.01, 128: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01}
 
         elif DATASET_TYPE == 'synth':
             beta_values = [50]  # Minimal set for testing
@@ -235,7 +235,7 @@ def main():
             eps=-1e-7,
             test_mode=TEST_MODE,
             add_grad_norm=True,
-            add_noise=False,  # If False, it becomes (S)GD
+            add_noise=True,  # If False, it becomes (S)GD
             sgld_num=1,  # Choose SGLD variant: 1 or 2
             annealed=False,  # Whether to use annealed SGLD
             min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
