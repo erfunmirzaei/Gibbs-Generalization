@@ -30,8 +30,8 @@ DATASET_SEED = 42  # Seed for dataset splitting/label randomization
 USE_SAME_DATASET_ACROSS_SEEDS = True  # Kept for compatibility
 
 # Core request: choose how many NEW pairs to run (classes cannot repeat across table)
-NUM_NEW_PAIRS = 1
-PAIR_SAMPLING_SEED = 42
+NUM_NEW_PAIRS = 2
+PAIR_SAMPLING_SEED = 52
 
 # Each pair runs:
 # 1) ULA for beta in [128, 1000]
@@ -435,7 +435,7 @@ def main():
         except Exception as exc:
             print(f"❌ Pair failed ({pair}): {exc}")
             # Continue with next pair while preserving already written rows
-            continue
+    #         continue
 
     print("\n" + "=" * 70)
     print("META-LEARNING PAIR RUN COMPLETED")
