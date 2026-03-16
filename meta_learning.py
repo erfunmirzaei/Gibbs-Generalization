@@ -51,9 +51,9 @@ ALL_CIFAR100_CLASSES = list(range(100))
 
 # Keep same learning-rate style while limiting betas to what table needs
 if TEST_MODE:
-    A0 = {0: 0.01, 128: 0.01, 1000: 0.01}
+    A0 = {0: 0.01, 128: 0.01, 1000: 0.01, 1000000: 0.01}
 else:
-    A0 = {0: 0.01, 128: 0.01, 1000: 0.01}
+    A0 = {0: 0.01, 128: 0.01, 1000: 0.01, 1000000: 0.01}
 
 EXCEL_HEADERS = [
     "CIFAR100 Classes",
