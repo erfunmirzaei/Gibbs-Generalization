@@ -1,0 +1,34 @@
+Sample_size,Beta,BCE_Train,BCE_Test,0-1_Train,0-1_Test,EMA_BCE_Train,EMA_BCE_Test,EMA_0-1_Train,EMA_0-1_Test
+1000,0.0,0.5519999861717224,0.5400000214576721,0.5519999861717224,0.5400000214576721,0.4982354455590248,0.49852299396693706,0.4982359999418259,0.4985249988287687
+1000,128,0.17900000512599945,0.20000000298023224,0.17900000512599945,0.20000000298023224,0.20132350904660468,0.20899415897188356,0.20134023543805465,0.2090144939735094
+1000,1000,0.09587040543556213,0.12999999523162842,0.09600000083446503,0.12999999523162842,0.08714759448388416,0.1327284759498797,0.08723841872954048,0.13284770444237096
+
+Summary:,"The LMC has been run with the following parameters:
+  - Device: cpu
+  - Loss function: SAVAGE
+  - l_max: 4.0
+  - Network architecture: FCN2L
+  - Number of hidden layers: 2
+  - Width of hidden layers: 500
+  - Dataset type: cifar100
+  - Dataset name: CIFAR-100
+  - Selected classes/groups: [23, 81]
+  - Random labels: 0
+  - Training set size: 1000
+  - Test set size: 200
+  - Minimum epochs: 2000
+  - Number of Batches: 1
+  - Beta values: [0.0, 128, 1000]
+  - Learning rate (a0): 0.01
+  - Learning rate decay (b): 0.5
+  - Gaussian prior sigma: 5.0
+ -  alpha_average: 0.01
+ -  alpha_stop: 0.00025
+ -  eta: 36
+ -  eps: -1e-07
+ -  Seed: 42
+ -  Gradient norm: [40.28704197311684, 1.0121480233227742, 0.4548899107410568]
+ -  Number of epochs per beta: [1000, 15454, 19147]
+ -  Variance of EMA Train BCE losses: [0.006061810406413237, 0.0006516189900551972, 3.926774373300742e-05]
+ -  Variance of EMA Test BCE losses: [0.006547008441935814, 0.0013270399945559813, 0.00012849009069144934]
+"
