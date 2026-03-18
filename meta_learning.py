@@ -30,8 +30,8 @@ DATASET_SEED = 42  # Seed for dataset splitting/label randomization
 USE_SAME_DATASET_ACROSS_SEEDS = True  # Kept for compatibility
 
 # Core request: choose how many NEW pairs to run (classes cannot repeat across table)
-NUM_NEW_PAIRS = 6
-PAIR_SAMPLING_SEED = 62
+NUM_NEW_PAIRS = 7
+PAIR_SAMPLING_SEED = 82
 
 # Each pair runs:
 # 1) ULA for beta in [128, 1000]
