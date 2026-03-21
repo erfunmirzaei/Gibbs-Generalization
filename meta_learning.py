@@ -30,8 +30,8 @@ DATASET_SEED = 42  # Seed for dataset splitting/label randomization
 USE_SAME_DATASET_ACROSS_SEEDS = True  # Kept for compatibility
 
 # Core request: choose how many NEW pairs to run (classes cannot repeat across table)
-NUM_NEW_PAIRS = 3
-PAIR_SAMPLING_SEED = 102
+NUM_NEW_PAIRS = 25
+PAIR_SAMPLING_SEED = 42
 
 # Each pair runs:
 # 1) ULA for beta in [128, 1000]
@@ -42,7 +42,8 @@ GD_BETA_PROXY = [1000000]
 # Optional side output
 SAVE_SEED_SUMMARY = False
 
-# Excel target
+# Meta-learning table output
+CREATE_NEW_TABLE_FILE = True
 EXCEL_PATH = Path("table_meta_learning.xlsx")
 
 # Fixed CIFAR-100 setup
@@ -54,6 +55,20 @@ if TEST_MODE:
     A0 = {0: 0.01, 128: 0.01, 1000: 0.01, 1000000: 0.01}
 else:
     A0 = {0: 0.01, 128: 0.01, 1000: 0.01, 1000000: 0.01}
+
+LOSS_NAME = "SAVAGE"
+N_HIDDEN_LAYERS = 1
+WIDTH = 500
+N_TRAIN_PER_GROUP = 500
+N_TEST_PER_GROUP = 100
+BATCH_SIZE = 1000
+SIGMA_GAUSS_PRIOR = 5.0
+MIN_STEPS = 2000
+MIN_STEPS_FIRST_BETA = 4000
+ALPHA_AVERAGE = 0.01
+ALPHA_STOP = 0.00025
+ETA = 36
+EPS = -1e-7
 
 EXCEL_HEADERS = [
     "CIFAR100 Classes",
@@ -83,11 +98,97 @@ def create_dataloaders(classes, dataset_seed):
     return get_cifar100_binary_dataloaders_partial_random_labels(
         classes=classes,
         p=USE_RANDOM_LABELS,
-        n_train_per_group=500,
-        n_test_per_group=100,
-        batch_size=1000,
+        n_train_per_group=N_TRAIN_PER_GROUP,
+        n_test_per_group=N_TEST_PER_GROUP,
+        batch_size=BATCH_SIZE,
         random_seed=dataset_seed,
     )
+
+
+def _build_meta_table_path() -> Path:
+    """Build table filename using training-like convention, without timestamp."""
+    if not CREATE_NEW_TABLE_FILE:
+        return EXCEL_PATH
+
+    if DATASET_TYPE == "mnist":
+        dataset_prefix = "M"
+    elif DATASET_TYPE in ("cifar10", "cifar100"):
+        dataset_prefix = "C"
+    else:
+        dataset_prefix = "S"
+
+    if USE_RANDOM_LABELS == 1:
+        label_prefix = "R"
+    elif USE_RANDOM_LABELS == 0:
+        label_prefix = "C"
+    else:
+        label_prefix = "P"
+
+    train_size = 2 * N_TRAIN_PER_GROUP
+    train_size_k = f"{train_size / 1000:.0f}k"
+    lr_value = A0.get(128, next(iter(A0.values()))) if isinstance(A0, dict) else A0
+    lr_token = str(lr_value).replace(".", "")
+
+    filename = (
+        f"table_meta_learning_{dataset_prefix}{label_prefix}"
+        f"L{N_HIDDEN_LAYERS}W{WIDTH}ULA_GD{train_size_k}"
+        f"LR{lr_token}{LOSS_NAME.upper()}.xlsx"
+    )
+    return Path(filename)
+
+
+def _build_summary_string(excel_path: Path, planned_pairs):
+    """Build summary string for metadata appended to table workbook."""
+    selected_pairs_str = [list(pair) for pair in planned_pairs]
+    return (
+        f"Meta-learning experiment summary\n"
+        f"  - Table path: {excel_path}\n"
+        f"  - Test mode: {TEST_MODE}\n"
+        f"  - Dataset type: {DATASET_TYPE}\n"
+        f"  - Random labels: {USE_RANDOM_LABELS}\n"
+        f"  - Number of new pairs requested: {NUM_NEW_PAIRS}\n"
+        f"  - Pair sampling seed: {PAIR_SAMPLING_SEED}\n"
+        f"  - Planned pairs: {selected_pairs_str}\n"
+        f"  - ULA beta values: {ULA_BETA_VALUES}\n"
+        f"  - GD beta proxy: {GD_BETA_PROXY}\n"
+        f"  - Seeds: {SEEDS}\n"
+        f"  - Dataset seed: {DATASET_SEED}\n"
+        f"  - Use same dataset across seeds: {USE_SAME_DATASET_ACROSS_SEEDS}\n"
+        f"  - Loss: {LOSS_NAME}\n"
+        f"  - Hidden layers: {N_HIDDEN_LAYERS}\n"
+        f"  - Width: {WIDTH}\n"
+        f"  - n_train_per_group: {N_TRAIN_PER_GROUP}\n"
+        f"  - n_test_per_group: {N_TEST_PER_GROUP}\n"
+        f"  - batch_size: {BATCH_SIZE}\n"
+        f"  - a0: {A0}\n"
+        f"  - sigma_gauss_prior: {SIGMA_GAUSS_PRIOR}\n"
+        f"  - min_steps: {MIN_STEPS}\n"
+        f"  - min_steps_first_beta: {MIN_STEPS_FIRST_BETA}\n"
+        f"  - alpha_average: {ALPHA_AVERAGE}\n"
+        f"  - alpha_stop: {ALPHA_STOP}\n"
+        f"  - eta: {ETA}\n"
+        f"  - eps: {EPS}\n"
+    )
+
+
+def _upsert_summary_in_excel(excel_path: Path, summary_string: str):
+    """Keep exactly one summary section at the end of the workbook."""
+    _ensure_workbook(excel_path)
+    wb = load_workbook(excel_path)
+    ws = wb[wb.sheetnames[0]]
+
+    summary_start_row = None
+    for row_idx in range(2, ws.max_row + 1):
+        if ws.cell(row=row_idx, column=1).value == "Summary:":
+            summary_start_row = row_idx
+            break
+
+    if summary_start_row is not None:
+        ws.delete_rows(summary_start_row, ws.max_row - summary_start_row + 1)
+
+    ws.append([])
+    ws.append(["Summary:", summary_string])
+    wb.save(excel_path)
 
 
 def _parse_pair_cell(value):
@@ -247,7 +348,7 @@ def _combine_metrics(ula_csv_path: Path, gd_csv_path: Path):
     }
 
 
-def append_result_to_excel(excel_path: Path, pair, metrics):
+def append_result_to_excel(excel_path: Path, pair, metrics, summary_string=None):
     """Append one completed pair result row to table_meta_learning.xlsx."""
     _ensure_workbook(excel_path)
     wb = load_workbook(excel_path)
@@ -255,15 +356,18 @@ def append_result_to_excel(excel_path: Path, pair, metrics):
 
     row = [
         f"[{pair[0]},{pair[1]}]",
-        f"{metrics['train_128']:.4f}",
-        f"{metrics['train_1000']:.4f}",
-        f"{metrics['train_inf']:.4f}",
-        f"{metrics['test_inf']:.4f}",
-        f"{metrics['train01_inf']:.4f}",
-        f"{metrics['test01_inf']:.4f}",
+        float(metrics['train_128']),
+        float(metrics['train_1000']),
+        float(metrics['train_inf']),
+        float(metrics['test_inf']),
+        float(metrics['train01_inf']),
+        float(metrics['test01_inf']),
     ]
     ws.append(row)
     wb.save(excel_path)
+
+    if summary_string is not None:
+        _upsert_summary_in_excel(excel_path, summary_string)
 
 
 def save_seed_stability_summary(seed_results, pair):
@@ -311,30 +415,30 @@ def run_pair_experiment(pair):
         train_loader, test_loader = create_dataloaders(classes=list(pair), dataset_seed=dataset_seed)
 
         csv_paths_ula = run_beta_experiments(
-            loss="SAVAGE",
+            loss=LOSS_NAME,
             beta_values=ULA_BETA_VALUES,
             a0=A0,
             b=0.5,
-            sigma_gauss_prior=5.0,
+            sigma_gauss_prior=SIGMA_GAUSS_PRIOR,
             device=device,
-            n_hidden_layers=2,
-            width=500,
+            n_hidden_layers=N_HIDDEN_LAYERS,
+            width=WIDTH,
             dataset_type=DATASET_TYPE,
             use_random_labels=USE_RANDOM_LABELS,
             l_max=4.0,
             train_loader=train_loader,
             test_loader=test_loader,
-            min_steps=2000,
-            alpha_average=0.01,
-            alpha_stop=0.00025,
-            eta=36,
-            eps=-1e-7,
+            min_steps=MIN_STEPS,
+            alpha_average=ALPHA_AVERAGE,
+            alpha_stop=ALPHA_STOP,
+            eta=ETA,
+            eps=EPS,
             test_mode=TEST_MODE,
             add_grad_norm=True,
             add_noise=True,
             sgld_num=1,
             annealed=False,
-            min_steps_first_beta=4000,
+            min_steps_first_beta=MIN_STEPS_FIRST_BETA,
             seed=seed,
             selected_classes=list(pair),
         )
@@ -348,30 +452,30 @@ def run_pair_experiment(pair):
         )
 
         csv_paths_gd = run_beta_experiments(
-            loss="SAVAGE",
+            loss=LOSS_NAME,
             beta_values=GD_BETA_PROXY,
             a0=A0,
             b=0.5,
-            sigma_gauss_prior=5.0,
+            sigma_gauss_prior=SIGMA_GAUSS_PRIOR,
             device=device,
-            n_hidden_layers=2,
-            width=500,
+            n_hidden_layers=N_HIDDEN_LAYERS,
+            width=WIDTH,
             dataset_type=DATASET_TYPE,
             use_random_labels=USE_RANDOM_LABELS,
             l_max=4.0,
             train_loader=train_loader,
             test_loader=test_loader,
-            min_steps=2000,
-            alpha_average=0.01,
-            alpha_stop=0.00025,
-            eta=36,
-            eps=-1e-7,
+            min_steps=MIN_STEPS,
+            alpha_average=ALPHA_AVERAGE,
+            alpha_stop=ALPHA_STOP,
+            eta=ETA,
+            eps=EPS,
             test_mode=TEST_MODE,
             add_grad_norm=True,
             add_noise=False,
             sgld_num=1,
             annealed=False,
-            min_steps_first_beta=4000,
+            min_steps_first_beta=MIN_STEPS_FIRST_BETA,
             seed=seed,
             selected_classes=list(pair),
         )
@@ -403,16 +507,19 @@ def main():
     if not SEEDS:
         raise ValueError("SEEDS must contain at least one seed value")
 
-    _ensure_workbook(EXCEL_PATH)
-    used_pairs, used_classes = load_used_classes_from_excel(EXCEL_PATH)
+    excel_path = _build_meta_table_path()
+    _ensure_workbook(excel_path)
+    used_pairs, used_classes = load_used_classes_from_excel(excel_path)
 
     print(f"Existing rows with valid pairs: {len(used_pairs)}")
     print(f"Used CIFAR-100 classes so far: {len(used_classes)}")
 
     rng = random.Random(PAIR_SAMPLING_SEED)
     new_pairs = sample_new_disjoint_pairs(NUM_NEW_PAIRS, used_classes, rng)
+    summary_string = _build_summary_string(excel_path, new_pairs)
 
     print(f"Planned new pairs: {new_pairs}")
+    print(f"Table path: {excel_path}")
     print("Mode: ULA at beta 128/1000 + GD for infinity columns")
 
     for index, pair in enumerate(new_pairs, start=1):
@@ -425,12 +532,12 @@ def main():
         try:
             ula_csv_path, gd_csv_path = run_pair_experiment(pair)
             metrics = _combine_metrics(ula_csv_path, gd_csv_path)
-            append_result_to_excel(EXCEL_PATH, pair, metrics)
+            append_result_to_excel(excel_path, pair, metrics, summary_string=summary_string)
 
             used_pairs.add(pair)
             used_classes.update(pair)
 
-            print(f"✅ Pair completed and appended to {EXCEL_PATH}: {pair}")
+            print(f"✅ Pair completed and appended to {excel_path}: {pair}")
 
         except Exception as exc:
             print(f"❌ Pair failed ({pair}): {exc}")
