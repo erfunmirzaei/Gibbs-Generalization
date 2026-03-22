@@ -9,9 +9,11 @@ pair finishes.
 
 import ast
 import csv
+import fcntl
 import random
 from datetime import datetime
 from pathlib import Path
+from contextlib import contextmanager
 
 import numpy as np
 import torch
@@ -137,9 +139,12 @@ def _build_meta_table_path() -> Path:
     return Path(filename)
 
 
-def _build_summary_string(excel_path: Path, planned_pairs):
+def _build_summary_string(excel_path: Path, planned_pairs=None):
     """Build summary string for metadata appended to table workbook."""
-    selected_pairs_str = [list(pair) for pair in planned_pairs]
+    if planned_pairs is None:
+        selected_pairs_str = "sampled online one-by-one"
+    else:
+        selected_pairs_str = [list(pair) for pair in planned_pairs]
     return (
         f"Meta-learning experiment summary\n"
         f"  - Table path: {excel_path}\n"
@@ -177,6 +182,29 @@ def _upsert_summary_in_excel(excel_path: Path, summary_string: str):
     wb = load_workbook(excel_path)
     ws = wb[wb.sheetnames[0]]
 
+    _remove_existing_summary(ws)
+
+    ws.append([])
+    ws.append(["Summary:", summary_string])
+    wb.save(excel_path)
+
+
+@contextmanager
+def _excel_lock(excel_path: Path):
+    """Cross-process lock for metadata table updates."""
+    lock_path = Path(str(excel_path) + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(lock_path, "w") as lock_file:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _remove_existing_summary(ws):
+    """Remove existing summary section (if present) from worksheet in-place."""
+
     summary_start_row = None
     for row_idx in range(2, ws.max_row + 1):
         if ws.cell(row=row_idx, column=1).value == "Summary:":
@@ -185,10 +213,6 @@ def _upsert_summary_in_excel(excel_path: Path, summary_string: str):
 
     if summary_start_row is not None:
         ws.delete_rows(summary_start_row, ws.max_row - summary_start_row + 1)
-
-    ws.append([])
-    ws.append(["Summary:", summary_string])
-    wb.save(excel_path)
 
 
 def _parse_pair_cell(value):
@@ -354,6 +378,10 @@ def append_result_to_excel(excel_path: Path, pair, metrics, summary_string=None)
     wb = load_workbook(excel_path)
     ws = wb[wb.sheetnames[0]]
 
+    # Keep data rows contiguous by removing summary before appending a new row.
+    # Summary is re-added at the very end below (if requested).
+    _remove_existing_summary(ws)
+
     row = [
         f"[{pair[0]},{pair[1]}]",
         float(metrics['train_128']),
@@ -363,8 +391,115 @@ def append_result_to_excel(excel_path: Path, pair, metrics, summary_string=None)
         float(metrics['train01_inf']),
         float(metrics['test01_inf']),
     ]
-    ws.append(row)
+
+    last_pair_row = 1
+    for row_idx in range(2, ws.max_row + 1):
+        value = ws.cell(row=row_idx, column=1).value
+        if _parse_pair_cell(value) is not None:
+            last_pair_row = row_idx
+
+    target_row = last_pair_row + 1
+    for col_idx, value in enumerate(row, start=1):
+        ws.cell(row=target_row, column=col_idx, value=value)
+
     wb.save(excel_path)
+
+    if summary_string is not None:
+        _upsert_summary_in_excel(excel_path, summary_string)
+
+
+def _find_pair_row(ws, pair):
+    for row_idx in range(2, ws.max_row + 1):
+        parsed = _parse_pair_cell(ws.cell(row=row_idx, column=1).value)
+        if parsed == tuple(sorted(pair)):
+            return row_idx
+    return None
+
+
+def reserve_pair_in_excel(excel_path: Path, pair):
+    """Reserve a pair row before training to avoid concurrent collisions."""
+    with _excel_lock(excel_path):
+        _ensure_workbook(excel_path)
+        wb = load_workbook(excel_path)
+        ws = wb[wb.sheetnames[0]]
+
+        if _find_pair_row(ws, pair) is not None:
+            return False
+
+        summary_text = None
+        for row_idx in range(2, ws.max_row + 1):
+            if ws.cell(row=row_idx, column=1).value == "Summary:":
+                summary_text = ws.cell(row=row_idx, column=2).value
+                break
+        _remove_existing_summary(ws)
+
+        last_pair_row = 1
+        for row_idx in range(2, ws.max_row + 1):
+            value = ws.cell(row=row_idx, column=1).value
+            if _parse_pair_cell(value) is not None:
+                last_pair_row = row_idx
+
+        target_row = last_pair_row + 1
+        ws.cell(row=target_row, column=1, value=f"[{pair[0]},{pair[1]}]")
+        ws.cell(row=target_row, column=2, value="PENDING")
+
+        if summary_text is not None:
+            ws.append([])
+            ws.append(["Summary:", summary_text])
+
+        wb.save(excel_path)
+        return True
+
+
+def remove_reserved_pair_from_excel(excel_path: Path, pair):
+    """Remove pair row (e.g., when a reserved pair run fails)."""
+    with _excel_lock(excel_path):
+        if not excel_path.exists():
+            return
+        wb = load_workbook(excel_path)
+        ws = wb[wb.sheetnames[0]]
+        row_idx = _find_pair_row(ws, pair)
+        if row_idx is not None:
+            ws.delete_rows(row_idx, 1)
+            wb.save(excel_path)
+
+
+def finalize_reserved_pair_in_excel(excel_path: Path, pair, metrics, summary_string=None):
+    """Fill reserved row with metrics after successful run."""
+    with _excel_lock(excel_path):
+        _ensure_workbook(excel_path)
+        wb = load_workbook(excel_path)
+        ws = wb[wb.sheetnames[0]]
+
+        row_idx = _find_pair_row(ws, pair)
+        if row_idx is None:
+            append_row = [
+                f"[{pair[0]},{pair[1]}]",
+                float(metrics['train_128']),
+                float(metrics['train_1000']),
+                float(metrics['train_inf']),
+                float(metrics['test_inf']),
+                float(metrics['train01_inf']),
+                float(metrics['test01_inf']),
+            ]
+            last_pair_row = 1
+            for candidate_row in range(2, ws.max_row + 1):
+                value = ws.cell(row=candidate_row, column=1).value
+                if _parse_pair_cell(value) is not None:
+                    last_pair_row = candidate_row
+            target_row = last_pair_row + 1
+            for col_idx, value in enumerate(append_row, start=1):
+                ws.cell(row=target_row, column=col_idx, value=value)
+        else:
+            ws.cell(row=row_idx, column=1, value=f"[{pair[0]},{pair[1]}]")
+            ws.cell(row=row_idx, column=2, value=float(metrics['train_128']))
+            ws.cell(row=row_idx, column=3, value=float(metrics['train_1000']))
+            ws.cell(row=row_idx, column=4, value=float(metrics['train_inf']))
+            ws.cell(row=row_idx, column=5, value=float(metrics['test_inf']))
+            ws.cell(row=row_idx, column=6, value=float(metrics['train01_inf']))
+            ws.cell(row=row_idx, column=7, value=float(metrics['test01_inf']))
+
+        wb.save(excel_path)
 
     if summary_string is not None:
         _upsert_summary_in_excel(excel_path, summary_string)
@@ -509,43 +644,48 @@ def main():
 
     excel_path = _build_meta_table_path()
     _ensure_workbook(excel_path)
-    used_pairs, used_classes = load_used_classes_from_excel(excel_path)
-
-    print(f"Existing rows with valid pairs: {len(used_pairs)}")
-    print(f"Used CIFAR-100 classes so far: {len(used_classes)}")
-
     rng = random.Random(PAIR_SAMPLING_SEED)
-    new_pairs = sample_new_disjoint_pairs(NUM_NEW_PAIRS, used_classes, rng)
-    summary_string = _build_summary_string(excel_path, new_pairs)
-
-    print(f"Planned new pairs: {new_pairs}")
     print(f"Table path: {excel_path}")
-    print("Mode: ULA at beta 128/1000 + GD for infinity columns")
+    print("Mode: ULA at beta 128/1000 + GD for infinity columns (online one-by-one sampling)")
 
-    for index, pair in enumerate(new_pairs, start=1):
-        print(f"\n>>> Pair {index}/{len(new_pairs)}: {pair}")
+    completed_pairs = 0
+    attempts = 0
 
-        if pair in used_pairs:
-            print(f"Skipping already existing pair in table: {pair}")
+    while completed_pairs < NUM_NEW_PAIRS:
+        attempts += 1
+
+        used_pairs, used_classes = load_used_classes_from_excel(excel_path)
+        print(f"\nCurrent table pairs: {len(used_pairs)}, used classes: {len(used_classes)}")
+
+        try:
+            pair = sample_new_disjoint_pairs(1, used_classes, rng)[0]
+        except ValueError:
+            print("No more class-disjoint pairs available.")
+            break
+
+        print(f">>> Reserving pair {completed_pairs + 1}/{NUM_NEW_PAIRS}: {pair}")
+        if not reserve_pair_in_excel(excel_path, pair):
+            print(f"Reservation race detected; pair already taken: {pair}")
             continue
 
         try:
             ula_csv_path, gd_csv_path = run_pair_experiment(pair)
             metrics = _combine_metrics(ula_csv_path, gd_csv_path)
-            append_result_to_excel(excel_path, pair, metrics, summary_string=summary_string)
-
-            used_pairs.add(pair)
-            used_classes.update(pair)
+            summary_string = _build_summary_string(excel_path, planned_pairs=None)
+            finalize_reserved_pair_in_excel(excel_path, pair, metrics, summary_string=summary_string)
+            completed_pairs += 1
 
             print(f"✅ Pair completed and appended to {excel_path}: {pair}")
 
         except Exception as exc:
             print(f"❌ Pair failed ({pair}): {exc}")
+            remove_reserved_pair_from_excel(excel_path, pair)
             # Continue with next pair while preserving already written rows
-    #         continue
+            continue
 
     print("\n" + "=" * 70)
     print("META-LEARNING PAIR RUN COMPLETED")
+    print(f"Requested pairs: {NUM_NEW_PAIRS}, completed pairs: {completed_pairs}, attempts: {attempts}")
     print("=" * 70)
 
 
