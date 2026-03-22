@@ -43,8 +43,8 @@ GD_BETA_PROXY = [1000000]
 SAVE_SEED_SUMMARY = False
 
 # Meta-learning table output
-CREATE_NEW_TABLE_FILE = True
-EXCEL_PATH = Path("table_meta_learning.xlsx")
+CREATE_NEW_TABLE_FILE = False
+EXCEL_PATH = Path("table_meta_learning_CCL1W500ULA_GD1kLR001SAVAGE.xlsx")
 
 # Fixed CIFAR-100 setup
 DATASET_TYPE = "cifar100"
