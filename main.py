@@ -20,8 +20,8 @@ from training import run_beta_experiments
 # Configuration flags
 TEST_MODE = True  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 0  # Percentage of randomly labeled data 
-DATASET_TYPE = 'cifar100'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
-SEEDS = [42,52,62,72,100,2054,56487,878,787,89]  # Random seeds for stability analysis
+DATASET_TYPE = 'mnist'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
+SEEDS = [42]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
@@ -29,7 +29,7 @@ USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all 
 # Can be either:
 # - Individual classes: [0, 1] 
 # - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
-MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
+MNIST_CLASSES = [1,7]  # Even vs Odd digits
 
 # CIFAR-10 classes for binary classification (only used when DATASET_TYPE='cifar10')
 # Can be either:
@@ -64,7 +64,7 @@ def create_dataloaders(dataset_seed):
             classes=MNIST_CLASSES,
             p=USE_RANDOM_LABELS,
             n_train_per_group=1000,
-            n_test_per_group=5000,
+            n_test_per_group=1000,
             batch_size=2000,
             random_seed=dataset_seed,
             normalize=True
