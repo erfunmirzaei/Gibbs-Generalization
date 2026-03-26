@@ -74,6 +74,7 @@ Desktop.ini
 *.tmp
 *.temp
 *.log
+*.md
 
 # Model checkpoints
 *.pth
