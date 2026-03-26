@@ -63,9 +63,9 @@ def create_dataloaders(dataset_seed):
         return get_mnist_binary_dataloaders_partial_random_labels(
             classes=MNIST_CLASSES,
             p=USE_RANDOM_LABELS,
-            n_train_per_group=1000,
+            n_train_per_group=5,
             n_test_per_group=1000,
-            batch_size=2000,
+            batch_size=10,
             random_seed=dataset_seed,
             normalize=True
         )
@@ -145,8 +145,8 @@ def main():
         print("="*50)
 
         if DATASET_TYPE == 'mnist':
-            beta_values = [ 2000]  # Minimal set for testing
-            a0 = {0: 0.01, 2000: 0.01}
+            beta_values = [256, 2000]  # Minimal set for testing
+            a0 = {0: 0.01, 256:0.01, 2000: 0.01}
 
         elif DATASET_TYPE in ('cifar10', 'cifar100'):
             beta_values = [128, 250, 500, 1000]  # Minimal set for testing
