@@ -7,6 +7,7 @@ and for evaluating model performance.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import math
 
 class TangentLoss(nn.Module):
     """
@@ -142,3 +143,27 @@ class ZeroOneLoss(nn.Module):
         # Compute error rate
         errors = (predictions != targets).float()
         return errors.mean()
+
+
+class PBBBoundedNLLLoss(nn.Module):
+    """
+    PBB-style bounded negative log-likelihood based on pmin.
+
+    This matches the original PBB behavior:
+    1) clamp log-probabilities at log(pmin)
+    2) compute NLL
+    3) normalize by log(1/pmin) to map loss into [0, 1]
+    """
+
+    def __init__(self, pmin: float = 1e-4):
+        super().__init__()
+        if not (0.0 < pmin < 1.0):
+            raise ValueError(f"pmin must be in (0, 1), got {pmin}")
+        self.pmin = float(pmin)
+        self.log_pmin = math.log(self.pmin)
+        self.normalizer = math.log(1.0 / self.pmin)
+
+    def forward(self, log_probs: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        clamped_log_probs = torch.clamp(log_probs, min=self.log_pmin)
+        nll = F.nll_loss(clamped_log_probs, target)
+        return nll / self.normalizer

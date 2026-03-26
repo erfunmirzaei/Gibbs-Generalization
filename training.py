@@ -6,13 +6,14 @@ experiments across different beta values with multiple repetitions.
 """
 import math
 import torch
+import torch.nn as nn
 import torch.optim as optim
 import time
 import os
 import csv
 import random
 from datetime import datetime
-from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
+from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss, PBBBoundedNLLLoss
 from torch.nn import BCEWithLogitsLoss
 from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
 from sgld import SGLD
@@ -192,7 +193,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                      beta, device, dataset_type,
                      l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True,
                      prior_type='gaussian', use_layerwise_prior_in_sgld=False,
-                     layerwise_prior_scale=1.0, max_epochs=None):
+                     layerwise_prior_scale=1.0, max_epochs=None, pmin=None):
     """
     Train a neural network using Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -240,6 +241,10 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
+    elif loss.lower() == 'nll':
+        criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
+    elif loss.lower() == 'ce':
+        criterion = nn.CrossEntropyLoss()
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
@@ -670,7 +675,8 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                      beta_values, device, dataset_type,
                      l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True,
                      min_steps_first_beta=None, prior_type='gaussian',
-                     use_layerwise_prior_in_sgld=False, layerwise_prior_scale=1.0):
+                     use_layerwise_prior_in_sgld=False, layerwise_prior_scale=1.0,
+                     pmin=None):
     """
     Train a neural network using Annealed Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -718,6 +724,10 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
+    elif loss.lower() == 'nll':
+        criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
+    elif loss.lower() == 'ce':
+        criterion = nn.CrossEntropyLoss()
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
@@ -1057,7 +1067,7 @@ def check_stopping_criterion(thinned_loss_samples, rse_threshold=0.01):
 def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
                      beta_values, device, dataset_type,
-                     l_max, alpha_average, alpha_stop,  eta, eps):
+                     l_max, alpha_average, alpha_stop,  eta, eps, pmin=None):
     """
     Train a neural network using Annealed MALA (Metropolis-Adjusted Langevin Algorithm).
     
@@ -1118,6 +1128,10 @@ def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps,
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
+    elif loss.lower() == 'nll':
+        criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
+    elif loss.lower() == 'ce':
+        criterion = nn.CrossEntropyLoss()
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
@@ -1527,7 +1541,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                          sgld_num = 1, annealed = False, add_noise=True, save_every=1, min_steps_first_beta=None,
                          seed=42, selected_classes=None, use_pbb_models=False, pbb_architecture=None,
                          prior_type=None, sigma_prior=None, checkpoint_dir='checkpoints', resume_from_checkpoint=True,
-                         max_epochs=None):
+                         max_epochs=None, pmin=None):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -1700,6 +1714,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         'eps': eps,
         'b': b,
         'sigma_gauss_prior': sigma_gauss_prior,
+        'pmin': pmin,
         'max_epochs': max_epochs,
     }
 
@@ -1749,6 +1764,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             prior_type=normalized_prior_type,
             use_layerwise_prior_in_sgld=use_layerwise_prior_in_sgld,
             layerwise_prior_scale=layerwise_prior_scale,
+            pmin=pmin,
         )
         
         # Save results for annealed case
@@ -1881,6 +1897,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 use_layerwise_prior_in_sgld=use_layerwise_prior_in_sgld,
                 layerwise_prior_scale=layerwise_prior_scale,
                 max_epochs=max_epochs,
+                pmin=pmin,
             )
             
 
@@ -2037,6 +2054,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             alpha_stop=alpha_stop,
             eta=eta,
             eps=eps,
+            pmin=pmin,
         )
         
         # Save results for annealed case

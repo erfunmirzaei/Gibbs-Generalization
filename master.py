@@ -77,6 +77,7 @@ PBB_ARCHITECTURE = 'fc'  # Options: 'fc', 'cnn'
 # NLL uses log_softmax output (as in original PBB and our models)
 # This is automatically handled by the loss selection in training
 PBB_LOSS_TYPE = 'nll'  # Options: 'nll', 'ce'
+PBB_PMIN = 1e-5  # PBB running_example uses PMIN = 1e-5
 
 # PBB Prior distribution: 'gaussian', 'laplace', or 'truncated_gaussian'
 # 'truncated_gaussian' enables layer-wise truncated initialization + layer-wise SGLD prior scale
@@ -238,8 +239,15 @@ def main():
         else:
             selected_classes = None
 
+        experiment_loss = 'SAVAGE'
+        if USE_PBB_CONFIG:
+            if PBB_LOSS_TYPE.lower() in ['nll', 'ce']:
+                experiment_loss = PBB_LOSS_TYPE.lower()
+            else:
+                raise ValueError(f"Unsupported PBB_LOSS_TYPE: {PBB_LOSS_TYPE}. Use 'nll' or 'ce'.")
+
         csv_paths = run_beta_experiments(
-            loss='SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
+            loss=experiment_loss,
             beta_values=beta_values,
             a0=a0,  # Now supports dict, callable, or float
             b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
@@ -270,6 +278,7 @@ def main():
             pbb_architecture=PBB_ARCHITECTURE if USE_PBB_CONFIG else None,
             prior_type=PBB_PRIOR_DIST if USE_PBB_CONFIG else None,
             sigma_prior=PBB_SIGMA_PRIOR if USE_PBB_CONFIG else None,
+            pmin=PBB_PMIN if (USE_PBB_CONFIG and experiment_loss == 'nll') else None,
             max_epochs=500,  # Maximum epochs per beta (hard limit), None for convergence-based only
         )
 
