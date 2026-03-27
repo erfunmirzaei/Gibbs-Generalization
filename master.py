@@ -67,47 +67,31 @@ MNIST_CLASSES_MULTICLASS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # All 10 digits
 # ---------------------------------------------------------------------------
 # Easy experiment switches
 # ---------------------------------------------------------------------------
-# Loss used by run_beta_experiments: 'bbce', 'savage', 'nll', or 'ce'
-LOSS_FUNCTION = 'nll'
-
-# p_min used for bounded NLL when LOSS_FUNCTION='nll'.
-# Matches the default used in the original PBB repository code paths.
-PBB_PMIN = 1e-4
-
-# SGLD Gaussian prior sigma (same role as in main.py)
-SGLD_SIGMA_GAUSS_PRIOR = 5.0
-
-# If False and USE_PBB_CONFIG=True, PBB architecture is kept but prior initialization is skipped.
-# This is closer to main.py behavior (default parameter initialization).
-INITIALIZE_PBB_WITH_PRIOR = True
-
-# Hard epoch cap for beta>0 training.
-# None => use convergence-only stopping (same style as binary training in training.py)
-MAX_ITER = None
-
-# Stopping policy for beta>0 training:
-# - 'ema': original EMA-diff + min_steps logic (with optional MAX_ITER cap)
-# - 'max_iter_only': ignore EMA stopping and run strictly for MAX_ITER epochs
-STOPPING_MODE = 'max_iter_only'  # Options: 'ema', 'max_iter_only'
-
-# Layer-wise SGLD prior decay control for truncated-Gaussian PBB mode
-# - 'off': disable layer-wise SGLD prior decay (stable default)
-# - 'adaptive': enable with weight-decay clipping for stability
-# - 'on': enable fully (no clipping; may be unstable for small sigma_prior)
-LAYERWISE_SGLD_PRIOR_DECAY_MODE = 'adaptive'  # Options: 'off', 'adaptive', 'on'
-LAYERWISE_SGLD_MAX_WEIGHT_DECAY = 50.0  # Used only in 'adaptive' mode
-ASK_BEFORE_LAYERWISE_SGLD = True  # If True, ask confirmation at runtime when mode != 'off'
-
-# ---------------------------------------------------------------------------
-# Presets (one-line switch)
-# ---------------------------------------------------------------------------
-# Set to one of:
-# - 'main_like_multiclass'
-# - 'pbb_strict'
-# - 'pbb_adaptive' (recommended)
-# - None (keep manual values above)
+# Main switch:
+# - Use one of: 'main_like_multiclass', 'pbb_strict', 'pbb_adaptive'
+# - Or set to None to use MANUAL_CONFIG below.
 EXPERIMENT_PRESET = 'main_like_multiclass'
 
+# Manual fallback when EXPERIMENT_PRESET is None.
+# This block is also used as the base config that presets override.
+MANUAL_CONFIG = {
+    'USE_PBB_CONFIG': False,
+    'PBB_ARCHITECTURE': 'fc',  # 'fc' (NNet4l) or 'cnn' (CNNet4l)
+    'LOSS_FUNCTION': 'nll',    # 'bbce', 'savage', 'nll', or 'ce'
+    'PBB_PMIN': 1e-4,          # Used when LOSS_FUNCTION='nll'
+    'SGLD_SIGMA_GAUSS_PRIOR': 5.0,  # SGLD optimizer prior sigma
+    'INITIALIZE_PBB_WITH_PRIOR': True,
+    'PBB_PRIOR_DIST': 'gaussian',   # 'gaussian', 'laplace', 'truncated_gaussian'
+    'PBB_SIGMA_PRIOR': 0.03,        # PBB init prior scale (not SGLD sigma)
+    'MAX_ITER': None,
+    'STOPPING_MODE': 'max_iter_only',  # 'ema' or 'max_iter_only'
+    # Layer-wise SGLD prior decay control for truncated-Gaussian PBB mode.
+    'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'adaptive',  # 'off', 'adaptive', 'on'
+    'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
+    'ASK_BEFORE_LAYERWISE_SGLD': True,
+}
+
+# Presets only override keys that differ from MANUAL_CONFIG.
 PRESET_CONFIGS = {
     # Closest behavior to main.py style, but with multiclass data path.
     'main_like_multiclass': {
@@ -158,20 +142,34 @@ PRESET_CONFIGS = {
 }
 
 
-def apply_experiment_preset(preset_name):
-    """Apply one of PRESET_CONFIGS by updating module-level config variables."""
+def resolve_experiment_config(preset_name):
+    """Merge MANUAL_CONFIG with an optional preset override."""
+    config = dict(MANUAL_CONFIG)
     if preset_name is None:
-        return
+        return config
 
     if preset_name not in PRESET_CONFIGS:
         valid = ', '.join(sorted(PRESET_CONFIGS.keys()))
         raise ValueError(f"Unknown EXPERIMENT_PRESET='{preset_name}'. Valid values: {valid}, or None")
 
-    for key, value in PRESET_CONFIGS[preset_name].items():
-        globals()[key] = value
+    config.update(PRESET_CONFIGS[preset_name])
+    return config
 
 
-apply_experiment_preset(EXPERIMENT_PRESET)
+_cfg = resolve_experiment_config(EXPERIMENT_PRESET)
+USE_PBB_CONFIG = _cfg['USE_PBB_CONFIG']
+PBB_ARCHITECTURE = _cfg['PBB_ARCHITECTURE']
+LOSS_FUNCTION = _cfg['LOSS_FUNCTION']
+PBB_PMIN = _cfg['PBB_PMIN']
+SGLD_SIGMA_GAUSS_PRIOR = _cfg['SGLD_SIGMA_GAUSS_PRIOR']
+INITIALIZE_PBB_WITH_PRIOR = _cfg['INITIALIZE_PBB_WITH_PRIOR']
+PBB_PRIOR_DIST = _cfg['PBB_PRIOR_DIST']
+PBB_SIGMA_PRIOR = _cfg['PBB_SIGMA_PRIOR']
+MAX_ITER = _cfg['MAX_ITER']
+STOPPING_MODE = _cfg['STOPPING_MODE']
+LAYERWISE_SGLD_PRIOR_DECAY_MODE = _cfg['LAYERWISE_SGLD_PRIOR_DECAY_MODE']
+LAYERWISE_SGLD_MAX_WEIGHT_DECAY = _cfg['LAYERWISE_SGLD_MAX_WEIGHT_DECAY']
+ASK_BEFORE_LAYERWISE_SGLD = _cfg['ASK_BEFORE_LAYERWISE_SGLD']
 
 def set_global_seed(seed):
     """Set random seed across torch/numpy/python for reproducibility."""

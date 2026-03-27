@@ -753,6 +753,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                      min_steps_first_beta=None, prior_type='gaussian',
                      use_layerwise_prior_in_sgld=False, layerwise_prior_scale=1.0,
                      pmin=None, max_layerwise_weight_decay=None,
+                     max_epochs=None,
                      stopping_mode='ema'):
     """
     Train a neural network using Annealed Stochastic Gradient Langevin Dynamics (SGLD).
@@ -1892,6 +1893,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             layerwise_prior_scale=layerwise_prior_scale,
             pmin=pmin,
             max_layerwise_weight_decay=effective_max_layerwise_weight_decay,
+            max_epochs=max_epochs,
             stopping_mode=stopping_mode,
         )
         
