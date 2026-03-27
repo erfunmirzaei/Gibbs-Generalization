@@ -73,9 +73,13 @@ USE_PBB_CONFIG = True  # Set True to match PBB paper exactly
 # CNNet4l: 4-layer convolutional network (1->32->64 channels)
 PBB_ARCHITECTURE = 'fc'  # Options: 'fc', 'cnn'
 
-# PBB Loss function: 'nll' (F.nll_loss) or 'ce' (F.cross_entropy)
-# NLL uses log_softmax output (as in original PBB and our models)
-# This is automatically handled by the loss selection in training
+# PBB Loss function: 'nll' (PBBBoundedNLLLoss) or 'ce' (nn.CrossEntropyLoss)
+# Important difference:
+# - 'ce': standard cross-entropy on logits (unbounded)
+# - 'nll': PBB bounded NLL in this repo: clamp log-probs at log(pmin), then
+#          normalize by log(1/pmin) to map the loss into [0, 1]
+# For closest PBB-style comparison in this codebase, keep 'nll' with PBB_PMIN.
+# This mapping is automatically handled by the loss selection in training.py.
 PBB_LOSS_TYPE = 'nll'  # Options: 'nll', 'ce'
 PBB_PMIN = 1e-5  # PBB running_example uses PMIN = 1e-5
 
@@ -182,13 +186,20 @@ def main():
 
     # Automatically select GPU if available, otherwise use CPU
     if torch.cuda.is_available():
-        device = f'cuda:{torch.cuda.current_device()}'
+        current_gpu = torch.cuda.current_device()
+        device = f'cuda:{current_gpu}'
         print(f"🚀 GPU detected and will be used: {device}")
-        print(f"   GPU Name: {torch.cuda.get_device_name()}")
-        print(f"   GPU Memory: {torch.cuda.get_device_properties().total_memory / 1e9:.1f} GB")
+        print(f"   GPU Name: {torch.cuda.get_device_name(current_gpu)}")
+        print(f"   GPU Memory: {torch.cuda.get_device_properties(current_gpu).total_memory / 1e9:.1f} GB")
     else:
         device = 'cpu'
         print(f"⚠️  No GPU detected, using CPU for training")
+        if torch.version.cuda is None:
+            print("   Reason: Installed PyTorch build is CPU-only (torch.version.cuda is None)")
+            print("   Fix: Install a CUDA-enabled PyTorch build in your active environment")
+        else:
+            print(f"   torch.version.cuda: {torch.version.cuda}")
+            print("   Fix: Check CUDA_VISIBLE_DEVICES, driver/runtime compatibility, and permissions")
     # Define beta values to test
     if TEST_MODE:
         print("\n" + "="*50)

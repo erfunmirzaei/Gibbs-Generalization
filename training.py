@@ -248,6 +248,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
+    print(f"[training] criterion={criterion.__class__.__name__}")
 
     # Initialize SGLD optimizer with inverse temperature
     optimizer = build_sgld_optimizer(
@@ -731,6 +732,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
+    print(f"[training] criterion={criterion.__class__.__name__}")
 
     # Lists to store final results for each beta
     list_train_BCE_losses = []
@@ -1135,6 +1137,7 @@ def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps,
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
+    print(f"[training] criterion={criterion.__class__.__name__}")
 
     # Lists to store final results for each beta
     list_train_BCE_losses = []

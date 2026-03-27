@@ -164,6 +164,13 @@ class PBBBoundedNLLLoss(nn.Module):
         self.normalizer = math.log(1.0 / self.pmin)
 
     def forward(self, log_probs: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        # F.nll_loss expects class indices (LongTensor), not one-hot/float labels.
+        if target.ndim == log_probs.ndim and target.shape[-1] == log_probs.shape[-1]:
+            target = torch.argmax(target, dim=-1)
+        elif target.ndim > 1 and target.shape[-1] == 1:
+            target = target.squeeze(-1)
+
+        target = target.to(device=log_probs.device, dtype=torch.long)
         clamped_log_probs = torch.clamp(log_probs, min=self.log_pmin)
         nll = F.nll_loss(clamped_log_probs, target)
         return nll / self.normalizer
