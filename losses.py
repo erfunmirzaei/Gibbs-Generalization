@@ -70,6 +70,41 @@ class SavageLoss(nn.Module):
         elif self.reduction == 'sum':
             return loss.sum()
         return loss
+
+
+class MulticlassSavageLoss(nn.Module):
+    """
+    Multiclass Savage-style loss.
+
+    For each sample with target class y, this uses:
+        L = (1 - p_y)^2
+    where p_y is the softmax probability of the correct class.
+
+    This is bounded in [0, 1] and avoids binary-margin assumptions.
+    """
+
+    def __init__(self, reduction='mean'):
+        super().__init__()
+        assert reduction in ('none', 'mean', 'sum')
+        self.reduction = reduction
+
+    def forward(self, logits: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
+        # Accept one-hot targets too.
+        if targets.ndim == logits.ndim and targets.shape[-1] == logits.shape[-1]:
+            targets = torch.argmax(targets, dim=-1)
+        elif targets.ndim > 1 and targets.shape[-1] == 1:
+            targets = targets.squeeze(-1)
+
+        targets = targets.to(device=logits.device, dtype=torch.long)
+        probs = torch.softmax(logits, dim=1)
+        p_y = probs.gather(1, targets.unsqueeze(1)).squeeze(1)
+        loss = (1.0 - p_y).pow(2)
+
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        return loss
     
     
 class BoundedCrossEntropyLoss(nn.Module):

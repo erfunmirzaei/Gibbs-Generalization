@@ -13,7 +13,7 @@ import os
 import csv
 import random
 from datetime import datetime
-from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss, PBBBoundedNLLLoss
+from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss, MulticlassSavageLoss, PBBBoundedNLLLoss
 from torch.nn import BCEWithLogitsLoss
 from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
 from sgld import SGLD
@@ -229,13 +229,29 @@ def _count_correct_predictions(predicted, targets):
 
     return (predicted == targets).sum().item()
 
+
+def _bootstrap_ema_train_losses(model, train_loader, criterion, device):
+    """Initialize EMA history from the first observed training-batch loss."""
+    was_training = model.training
+    model.eval()
+    with torch.no_grad():
+        batch_x, batch_y = next(iter(train_loader))
+        batch_x = batch_x.to(device, non_blocking=True)
+        batch_y = batch_y.to(device, non_blocking=True)
+        outputs = model(batch_x)
+        initial_loss = float(criterion(outputs.squeeze(), batch_y).item())
+    if was_training:
+        model.train()
+    return [0.0, initial_loss]
+
 def train_sgld_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
                      beta, device, dataset_type,
                      l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True,
                      prior_type='gaussian', use_layerwise_prior_in_sgld=False,
                      layerwise_prior_scale=1.0, max_epochs=None, pmin=None,
-                     max_layerwise_weight_decay=None):
+                     max_layerwise_weight_decay=None,
+                     stopping_mode='ema'):
     """
     Train a neural network using Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -282,7 +298,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     elif loss.lower() == 'tangent':
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
-        criterion = SavageLoss()
+        criterion = MulticlassSavageLoss()
     elif loss.lower() == 'nll':
         criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
     elif loss.lower() == 'ce':
@@ -319,7 +335,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     # scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lr_lambda_with_threshold)
     
     train_losses, test_losses, train_accuracies, test_accuracies, train_zero_one_losses, test_zero_one_losses, learning_rates = [], [], [], [], [], [], []
-    EMA_train_losses = [0.0, 1.0]  # Initialize with 1.0 for epoch 0
+    EMA_train_losses = _bootstrap_ema_train_losses(model, train_loader, criterion, device)
     EMA_alpha = alpha_stop  # Smoothing factor for EMA of loss
     
     # EMA_alpha_BCE = alpha_average
@@ -338,6 +354,14 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
     # print(f"Learning rate scheduler: power law decay with threshold at {lr_threshold}")
     print(f"Dataset type: {dataset_type}, Device: {device}")
+    stopping_mode = str(stopping_mode).lower().strip()
+    if stopping_mode not in {'ema', 'max_iter_only'}:
+        raise ValueError("stopping_mode must be one of: 'ema', 'max_iter_only'")
+    if stopping_mode == 'max_iter_only' and (max_epochs is None or max_epochs <= 0):
+        raise ValueError("For stopping_mode='max_iter_only', max_epochs must be a positive integer")
+
+    if stopping_mode == 'max_iter_only':
+        print(f"[training] stopping_mode=max_iter_only -> running exactly max_epochs={max_epochs} epochs")
     if max_epochs is None:
         print("[training] max_epochs=None -> using convergence-only stopping (same style as binary training)")
     
@@ -422,11 +446,17 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 f'EMA Train Zero-One Loss: {mean(avg_train_zero_one_losses):.4f}, EMA Test Zero-One Loss: {mean(avg_test_zero_one_losses):.4f}'
                 )
 
-    while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_steps / len(train_loader)) and beta > 0.0:
-        # Check max_epochs limit if specified
-        if max_epochs is not None and epoch >= max_epochs:
-            print(f'   Reached maximum epochs limit: {max_epochs}. Stopping training.')
-            break
+    while beta > 0.0:
+        if stopping_mode == 'max_iter_only':
+            if epoch >= max_epochs:
+                print(f'   Reached maximum epochs limit: {max_epochs}. Stopping training.')
+                break
+        else:
+            if not (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch < min_steps / len(train_loader)):
+                break
+            if max_epochs is not None and epoch >= max_epochs:
+                print(f'   Reached maximum epochs limit: {max_epochs}. Stopping training.')
+                break
     # while epoch < 20000 and beta > 0.0:  # Large max epoch, we will break based on EMA convergence
         # Training phase
         model.train()
@@ -722,7 +752,8 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                      l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True,
                      min_steps_first_beta=None, prior_type='gaussian',
                      use_layerwise_prior_in_sgld=False, layerwise_prior_scale=1.0,
-                     pmin=None, max_layerwise_weight_decay=None):
+                     pmin=None, max_layerwise_weight_decay=None,
+                     stopping_mode='ema'):
     """
     Train a neural network using Annealed Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -769,7 +800,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     elif loss.lower() == 'tangent':
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
-        criterion = SavageLoss()
+        criterion = MulticlassSavageLoss()
     elif loss.lower() == 'nll':
         criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
     elif loss.lower() == 'ce':
@@ -792,7 +823,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     list_num_epochs_per_beta = []
 
     # EMA variables that persist across beta values
-    EMA_train_losses = [0.0, 1.0]  # For convergence detection
+    EMA_train_losses = _bootstrap_ema_train_losses(model, train_loader, criterion, device)
     # EMA_train_BCE_losses = [1.0]  # For ergodic average
     # EMA_test_BCE_losses = [1.0]
     # EMA_train_zero_one_losses = [1.0]
@@ -804,6 +835,9 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     
     p_grad_norm = 2  # L-p norm for gradient norm tracking
     EMA_alpha = alpha_stop  # Smoothing factor for EMA of loss (for convergence)
+    stopping_mode = str(stopping_mode).lower().strip()
+    if stopping_mode not in {'ema', 'max_iter_only'}:
+        raise ValueError("stopping_mode must be one of: 'ema', 'max_iter_only'")
     # EMA_alpha_BCE = alpha_average  # Smoothing factor for EMA of loss (for averaging)
     
     # Initialize optimizer (will be updated for each beta)
@@ -908,7 +942,7 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
             if not first_nonzero_beta_trained:
                 current_min_steps = min_steps_first_beta
                 first_nonzero_beta_trained = True
-                EMA_train_losses = [0.0, 1.0]  # For convergence detection
+                EMA_train_losses = _bootstrap_ema_train_losses(model, train_loader, criterion, device)
                 # EMA_train_BCE_losses = [1.0]  # For ergodic average
                 # EMA_test_BCE_losses = [1.0]
                 # EMA_train_zero_one_losses = [1.0]
@@ -942,8 +976,17 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 avg_grad_norm = []
                 # EMA_train_losses[-1] = EMA_train_losses[-1] * 1.5  # Slightly increase to avoid false convergence
             # Train until convergence
-            while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or 
-                   local_epoch < current_min_steps / len(train_loader)):
+            while True:
+                if stopping_mode == 'max_iter_only':
+                    if max_epochs is None or max_epochs <= 0:
+                        raise ValueError("For stopping_mode='max_iter_only', max_epochs must be a positive integer")
+                    if local_epoch >= max_epochs:
+                        break
+                else:
+                    if not (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or local_epoch < current_min_steps / len(train_loader)):
+                        break
+                    if max_epochs is not None and local_epoch >= max_epochs:
+                        break
                 # Training phase
                 model.train()
                 train_loss_total = 0.0
@@ -1175,7 +1218,7 @@ def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps,
     elif loss.lower() == 'tangent':
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
-        criterion = SavageLoss()
+        criterion = MulticlassSavageLoss()
     elif loss.lower() == 'nll':
         criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
     elif loss.lower() == 'ce':
@@ -1452,11 +1495,12 @@ def create_model_with_optional_pbb(dataset_type, n_hidden_layers, width, device,
             raise ValueError(f"PBB mode currently supports only MNIST, got dataset_type='{dataset_type}'")
         if pbb_architecture is None:
             raise ValueError("PBB mode requested but pbb_architecture is None.")
-        if sigma_prior is None:
-            raise ValueError("PBB mode requested but sigma_prior is None.")
 
         print(f"\n📦 Using PBB Model: {pbb_architecture.upper()}")
-        print(f"   Prior: {prior_type} with scale σ = {sigma_prior}")
+        if initialize_pbb_with_prior:
+            print(f"   Prior: {prior_type} with scale σ = {sigma_prior}")
+        else:
+            print("   Prior init: disabled (using default model initialization)")
         
         if pbb_architecture.lower() in ['fc', 'nnet4l']:
             model = NNet4l(num_classes=10, dropout_prob=0.0)
@@ -1468,6 +1512,9 @@ def create_model_with_optional_pbb(dataset_type, n_hidden_layers, width, device,
         if not initialize_pbb_with_prior:
             print("   ✓ Using default model initialization (PBB prior initialization disabled)")
             return model.to(device)
+
+        if sigma_prior is None:
+            raise ValueError("PBB prior initialization requested but sigma_prior is None.")
 
         # Initialize model with data-free prior
         normalized_prior = str(prior_type).lower() if prior_type is not None else 'gaussian'
@@ -1596,6 +1643,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                          seed=42, selected_classes=None, use_pbb_models=False, pbb_architecture=None,
                          prior_type=None, sigma_prior=None, checkpoint_dir='checkpoints', resume_from_checkpoint=True,
                          max_epochs=None, pmin=None,
+                         stopping_mode='ema',
                          layerwise_sgld_prior_decay_mode='off',
                          max_layerwise_weight_decay=50.0,
                          initialize_pbb_with_prior=True):
@@ -1783,6 +1831,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         'sigma_gauss_prior': sigma_gauss_prior,
         'pmin': pmin,
         'max_epochs': max_epochs,
+        'stopping_mode': stopping_mode,
     }
 
     if use_pbb_models and normalized_prior_type in ['truncated_gaussian', 'trunc_gaussian', 'truncnorm'] and dataset_type == 'mnist':
@@ -1843,6 +1892,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             layerwise_prior_scale=layerwise_prior_scale,
             pmin=pmin,
             max_layerwise_weight_decay=effective_max_layerwise_weight_decay,
+            stopping_mode=stopping_mode,
         )
         
         # Save results for annealed case
@@ -1978,6 +2028,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 max_epochs=max_epochs,
                 pmin=pmin,
                 max_layerwise_weight_decay=effective_max_layerwise_weight_decay,
+                stopping_mode=stopping_mode,
             )
             
 

@@ -57,43 +57,22 @@ MNIST_CLASS_MODE = 'multiclass'  # 'binary' for 2-class, 'multiclass' for multi-
 # Can be either:
 # - Individual classes: [0, 1] 
 # - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
-MNIST_CLASSES_BINARY = [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]]  # Even vs Odd digits
+MNIST_CLASSES_BINARY = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
 
 # MNIST classes for multi-class classification (only used when DATASET_TYPE='mnist' and MNIST_CLASS_MODE='multiclass')
 # Can include any subset of digits 0-9
 MNIST_CLASSES_MULTICLASS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # All 10 digits
 
-# ============================================================================
-# PBB (PAC-Bayes with Backprop) Configuration
-# ============================================================================
-# Set USE_PBB_CONFIG = True to use identical settings from the PBB paper for comparison
-USE_PBB_CONFIG = True  # Set True to match PBB paper exactly
-
-# PBB Architecture selection: 'fc' (NNet4l) or 'cnn' (CNNet4l) for MNIST
-# NNet4l: 4-layer fully connected network (600-600-600 hidden units)
-# CNNet4l: 4-layer convolutional network (1->32->64 channels)
-PBB_ARCHITECTURE = 'fc'  # Options: 'fc', 'cnn'
-
-# PBB Loss function: 'nll' (PBBBoundedNLLLoss) or 'ce' (nn.CrossEntropyLoss)
-# Important difference:
-# - 'ce': standard cross-entropy on logits (unbounded)
-# - 'nll': PBB bounded NLL in this repo: clamp log-probs at log(pmin), then
-#          normalize by log(1/pmin) to map the loss into [0, 1]
-# For closest PBB-style comparison in this codebase, keep 'nll' with PBB_PMIN.
-# This mapping is automatically handled by the loss selection in training.py.
-PBB_LOSS_TYPE = 'nll'  # Options: 'nll', 'ce'
-PBB_PMIN = 1e-5  # PBB running_example uses PMIN = 1e-5
-
-# PBB Prior distribution: 'gaussian', 'laplace', or 'truncated_gaussian'
-# 'truncated_gaussian' enables layer-wise truncated initialization + layer-wise SGLD prior scale
-PBB_PRIOR_DIST = 'truncated_gaussian'  # Options: 'gaussian', 'laplace', 'truncated_gaussian'
-PBB_SIGMA_PRIOR = 0.03  # PBB running_example uses SIGMAPRIOR = 0.03
 
 # ---------------------------------------------------------------------------
 # Easy experiment switches
 # ---------------------------------------------------------------------------
-# Loss used by run_beta_experiments: 'savage', 'nll', or 'ce'
+# Loss used by run_beta_experiments: 'bbce', 'savage', 'nll', or 'ce'
 LOSS_FUNCTION = 'nll'
+
+# p_min used for bounded NLL when LOSS_FUNCTION='nll'.
+# Matches the default used in the original PBB repository code paths.
+PBB_PMIN = 1e-4
 
 # SGLD Gaussian prior sigma (same role as in main.py)
 SGLD_SIGMA_GAUSS_PRIOR = 5.0
@@ -106,6 +85,11 @@ INITIALIZE_PBB_WITH_PRIOR = True
 # None => use convergence-only stopping (same style as binary training in training.py)
 MAX_ITER = None
 
+# Stopping policy for beta>0 training:
+# - 'ema': original EMA-diff + min_steps logic (with optional MAX_ITER cap)
+# - 'max_iter_only': ignore EMA stopping and run strictly for MAX_ITER epochs
+STOPPING_MODE = 'max_iter_only'  # Options: 'ema', 'max_iter_only'
+
 # Layer-wise SGLD prior decay control for truncated-Gaussian PBB mode
 # - 'off': disable layer-wise SGLD prior decay (stable default)
 # - 'adaptive': enable with weight-decay clipping for stability
@@ -113,6 +97,81 @@ MAX_ITER = None
 LAYERWISE_SGLD_PRIOR_DECAY_MODE = 'adaptive'  # Options: 'off', 'adaptive', 'on'
 LAYERWISE_SGLD_MAX_WEIGHT_DECAY = 50.0  # Used only in 'adaptive' mode
 ASK_BEFORE_LAYERWISE_SGLD = True  # If True, ask confirmation at runtime when mode != 'off'
+
+# ---------------------------------------------------------------------------
+# Presets (one-line switch)
+# ---------------------------------------------------------------------------
+# Set to one of:
+# - 'main_like_multiclass'
+# - 'pbb_strict'
+# - 'pbb_adaptive' (recommended)
+# - None (keep manual values above)
+EXPERIMENT_PRESET = 'main_like_multiclass'
+
+PRESET_CONFIGS = {
+    # Closest behavior to main.py style, but with multiclass data path.
+    'main_like_multiclass': {
+        'USE_PBB_CONFIG': True,
+        'PBB_ARCHITECTURE': 'fc',
+        'LOSS_FUNCTION': 'nll',
+        'PBB_PMIN': 1e-4,
+        'SGLD_SIGMA_GAUSS_PRIOR': 5.0,
+        'INITIALIZE_PBB_WITH_PRIOR': False,
+        'MAX_ITER': 500,
+        'STOPPING_MODE': 'max_iter_only',
+        'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'off',
+        'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
+        'ASK_BEFORE_LAYERWISE_SGLD': False,
+    },
+    # Closest to strict PBB setup; may be unstable depending on sigma/beta settings.
+    'pbb_strict': {
+        'USE_PBB_CONFIG': True,
+        'PBB_ARCHITECTURE': 'fc',
+        'LOSS_FUNCTION': 'nll',
+        'SGLD_SIGMA_GAUSS_PRIOR': 5.0,
+        'INITIALIZE_PBB_WITH_PRIOR': True,
+        'PBB_PRIOR_DIST': 'truncated_gaussian',
+        'PBB_SIGMA_PRIOR': 0.03,
+        'PBB_PMIN': 1e-4,
+        'MAX_ITER': 500,
+        'STOPPING_MODE': 'max_iter_only',
+        'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'on',
+        'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
+        'ASK_BEFORE_LAYERWISE_SGLD': True,
+    },
+    # PBB-like with adaptive stability guard on layer-wise SGLD decay.
+    'pbb_adaptive': {
+        'USE_PBB_CONFIG': True,
+        'PBB_ARCHITECTURE': 'fc',
+        'LOSS_FUNCTION': 'nll',
+        'SGLD_SIGMA_GAUSS_PRIOR': 5.0,
+        'INITIALIZE_PBB_WITH_PRIOR': True,
+        'PBB_PRIOR_DIST': 'truncated_gaussian',
+        'PBB_SIGMA_PRIOR': 0.03,
+        'PBB_PMIN': 1e-4,
+        'MAX_ITER': None,
+        'STOPPING_MODE': 'ema',
+        'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'adaptive',
+        'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
+        'ASK_BEFORE_LAYERWISE_SGLD': True,
+    },
+}
+
+
+def apply_experiment_preset(preset_name):
+    """Apply one of PRESET_CONFIGS by updating module-level config variables."""
+    if preset_name is None:
+        return
+
+    if preset_name not in PRESET_CONFIGS:
+        valid = ', '.join(sorted(PRESET_CONFIGS.keys()))
+        raise ValueError(f"Unknown EXPERIMENT_PRESET='{preset_name}'. Valid values: {valid}, or None")
+
+    for key, value in PRESET_CONFIGS[preset_name].items():
+        globals()[key] = value
+
+
+apply_experiment_preset(EXPERIMENT_PRESET)
 
 def set_global_seed(seed):
     """Set random seed across torch/numpy/python for reproducibility."""
@@ -255,6 +314,11 @@ def main():
     print(f"Gibbs Generalization EXPERIMENTS")
     print(f"Dataset: {DATASET_TYPE.upper()}")
     print(f"Beta values: {beta_values}")
+    print(f"Preset: {EXPERIMENT_PRESET if EXPERIMENT_PRESET is not None else 'manual'}")
+    print(f"Loss: {LOSS_FUNCTION}, Initialize PBB prior: {INITIALIZE_PBB_WITH_PRIOR}, MAX_ITER: {MAX_ITER}")
+    if str(LOSS_FUNCTION).lower().strip() == 'nll':
+        print(f"p_min (bounded NLL): {PBB_PMIN}")
+    print(f"Stopping mode: {STOPPING_MODE}")
     print(f"{'='*70}")
 
     layerwise_mode_to_use = str(LAYERWISE_SGLD_PRIOR_DECAY_MODE).lower()
@@ -294,10 +358,20 @@ def main():
             selected_classes = None
 
         experiment_loss = LOSS_FUNCTION.lower().strip()
-        if experiment_loss not in {'savage', 'nll', 'ce'}:
-            raise ValueError("LOSS_FUNCTION must be one of: 'savage', 'nll', 'ce'")
+        if experiment_loss not in {'bbce', 'savage', 'nll', 'ce'}:
+            raise ValueError("LOSS_FUNCTION must be one of: 'bbce', 'savage', 'nll', 'ce'")
+        if experiment_loss == 'nll':
+            print(f"Using bounded NLL with p_min={PBB_PMIN}")
 
-        if MAX_ITER is None:
+        stopping_mode = str(STOPPING_MODE).lower().strip()
+        if stopping_mode not in {'ema', 'max_iter_only'}:
+            raise ValueError("STOPPING_MODE must be one of: 'ema', 'max_iter_only'")
+        if stopping_mode == 'max_iter_only' and (MAX_ITER is None or MAX_ITER <= 0):
+            raise ValueError("For STOPPING_MODE='max_iter_only', set MAX_ITER to a positive integer")
+
+        if stopping_mode == 'max_iter_only':
+            print(f"Stopping policy: max-iter-only (MAX_ITER={MAX_ITER} per beta)")
+        elif MAX_ITER is None:
             print("Stopping policy: convergence-only (MAX_ITER=None, binary-style)")
         else:
             print(f"Stopping policy: hard cap MAX_ITER={MAX_ITER} per beta")
@@ -337,6 +411,7 @@ def main():
             initialize_pbb_with_prior=INITIALIZE_PBB_WITH_PRIOR,
             pmin=PBB_PMIN if experiment_loss == 'nll' else None,
             max_epochs=MAX_ITER,
+            stopping_mode=stopping_mode,
             resume_from_checkpoint=False,  # Keep behavior consistent with main.py: always run from scratch
             layerwise_sgld_prior_decay_mode=layerwise_mode_to_use,
             max_layerwise_weight_decay=LAYERWISE_SGLD_MAX_WEIGHT_DECAY,
