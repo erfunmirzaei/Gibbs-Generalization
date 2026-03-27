@@ -28,6 +28,7 @@ import torch
 import numpy as np
 import random
 import csv
+import sys
 from datetime import datetime
 from dataset import (
     get_mnist_binary_dataloaders_partial_random_labels,
@@ -37,7 +38,7 @@ from multiclass_dataset_functions import (
     get_mnist_multiclass_dataloaders,
     get_mnist_multiclass_dataloaders_partial_random_labels
 )
-from training import run_beta_experiments
+from training_multiclass import run_beta_experiments
 from pbb_models import NNet4l, CNNet4l
 from pbb_prior import initialize_model_with_prior, get_prior_initializer
 
@@ -50,7 +51,7 @@ DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicab
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
 # MNIST classification mode: 'binary' or 'multiclass'
-MNIST_CLASS_MODE = 'binary'  # 'binary' for 2-class, 'multiclass' for multi-class
+MNIST_CLASS_MODE = 'multiclass'  # 'binary' for 2-class, 'multiclass' for multi-class
 
 # MNIST classes for binary classification (only used when DATASET_TYPE='mnist' and MNIST_CLASS_MODE='binary')
 # Can be either:
@@ -87,6 +88,31 @@ PBB_PMIN = 1e-5  # PBB running_example uses PMIN = 1e-5
 # 'truncated_gaussian' enables layer-wise truncated initialization + layer-wise SGLD prior scale
 PBB_PRIOR_DIST = 'truncated_gaussian'  # Options: 'gaussian', 'laplace', 'truncated_gaussian'
 PBB_SIGMA_PRIOR = 0.03  # PBB running_example uses SIGMAPRIOR = 0.03
+
+# ---------------------------------------------------------------------------
+# Easy experiment switches
+# ---------------------------------------------------------------------------
+# Loss used by run_beta_experiments: 'savage', 'nll', or 'ce'
+LOSS_FUNCTION = 'nll'
+
+# SGLD Gaussian prior sigma (same role as in main.py)
+SGLD_SIGMA_GAUSS_PRIOR = 5.0
+
+# If False and USE_PBB_CONFIG=True, PBB architecture is kept but prior initialization is skipped.
+# This is closer to main.py behavior (default parameter initialization).
+INITIALIZE_PBB_WITH_PRIOR = True
+
+# Hard epoch cap for beta>0 training.
+# None => use convergence-only stopping (same style as binary training in training.py)
+MAX_ITER = None
+
+# Layer-wise SGLD prior decay control for truncated-Gaussian PBB mode
+# - 'off': disable layer-wise SGLD prior decay (stable default)
+# - 'adaptive': enable with weight-decay clipping for stability
+# - 'on': enable fully (no clipping; may be unstable for small sigma_prior)
+LAYERWISE_SGLD_PRIOR_DECAY_MODE = 'adaptive'  # Options: 'off', 'adaptive', 'on'
+LAYERWISE_SGLD_MAX_WEIGHT_DECAY = 50.0  # Used only in 'adaptive' mode
+ASK_BEFORE_LAYERWISE_SGLD = True  # If True, ask confirmation at runtime when mode != 'off'
 
 def set_global_seed(seed):
     """Set random seed across torch/numpy/python for reproducibility."""
@@ -231,6 +257,23 @@ def main():
     print(f"Beta values: {beta_values}")
     print(f"{'='*70}")
 
+    layerwise_mode_to_use = str(LAYERWISE_SGLD_PRIOR_DECAY_MODE).lower()
+    if layerwise_mode_to_use not in {'off', 'adaptive', 'on'}:
+        raise ValueError("LAYERWISE_SGLD_PRIOR_DECAY_MODE must be one of: 'off', 'adaptive', 'on'")
+
+    if ASK_BEFORE_LAYERWISE_SGLD and layerwise_mode_to_use != 'off':
+        if sys.stdin.isatty():
+            print("\nLayer-wise SGLD prior decay is requested.")
+            print(f"Requested mode: {layerwise_mode_to_use}")
+            if layerwise_mode_to_use == 'adaptive':
+                print(f"Adaptive max weight_decay cap: {LAYERWISE_SGLD_MAX_WEIGHT_DECAY}")
+            answer = input("Enable this setting for this run? [y/N]: ").strip().lower()
+            if answer not in {'y', 'yes'}:
+                layerwise_mode_to_use = 'off'
+                print("Layer-wise SGLD prior decay disabled for this run.")
+        else:
+            print("No interactive TTY detected; using configured layer-wise SGLD prior decay mode.")
+
     seed_results = []
 
     for seed in SEEDS:
@@ -250,19 +293,21 @@ def main():
         else:
             selected_classes = None
 
-        experiment_loss = 'SAVAGE'
-        if USE_PBB_CONFIG:
-            if PBB_LOSS_TYPE.lower() in ['nll', 'ce']:
-                experiment_loss = PBB_LOSS_TYPE.lower()
-            else:
-                raise ValueError(f"Unsupported PBB_LOSS_TYPE: {PBB_LOSS_TYPE}. Use 'nll' or 'ce'.")
+        experiment_loss = LOSS_FUNCTION.lower().strip()
+        if experiment_loss not in {'savage', 'nll', 'ce'}:
+            raise ValueError("LOSS_FUNCTION must be one of: 'savage', 'nll', 'ce'")
+
+        if MAX_ITER is None:
+            print("Stopping policy: convergence-only (MAX_ITER=None, binary-style)")
+        else:
+            print(f"Stopping policy: hard cap MAX_ITER={MAX_ITER} per beta")
 
         csv_paths = run_beta_experiments(
             loss=experiment_loss,
             beta_values=beta_values,
             a0=a0,  # Now supports dict, callable, or float
             b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
-            sigma_gauss_prior=5.0,
+            sigma_gauss_prior=SGLD_SIGMA_GAUSS_PRIOR,
             device=device,
             n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
             width=500, # Width of each hidden layer, only for fully connected networks
@@ -287,10 +332,14 @@ def main():
             # PBB Configuration (optional - only used if USE_PBB_CONFIG=True)
             use_pbb_models=USE_PBB_CONFIG,
             pbb_architecture=PBB_ARCHITECTURE if USE_PBB_CONFIG else None,
-            prior_type=PBB_PRIOR_DIST if USE_PBB_CONFIG else None,
-            sigma_prior=PBB_SIGMA_PRIOR if USE_PBB_CONFIG else None,
-            pmin=PBB_PMIN if (USE_PBB_CONFIG and experiment_loss == 'nll') else None,
-            max_epochs=500,  # Maximum epochs per beta (hard limit), None for convergence-based only
+            prior_type=PBB_PRIOR_DIST if (USE_PBB_CONFIG and INITIALIZE_PBB_WITH_PRIOR) else None,
+            sigma_prior=PBB_SIGMA_PRIOR if (USE_PBB_CONFIG and INITIALIZE_PBB_WITH_PRIOR) else None,
+            initialize_pbb_with_prior=INITIALIZE_PBB_WITH_PRIOR,
+            pmin=PBB_PMIN if experiment_loss == 'nll' else None,
+            max_epochs=MAX_ITER,
+            resume_from_checkpoint=False,  # Keep behavior consistent with main.py: always run from scratch
+            layerwise_sgld_prior_decay_mode=layerwise_mode_to_use,
+            max_layerwise_weight_decay=LAYERWISE_SGLD_MAX_WEIGHT_DECAY,
         )
 
         seed_results.append({

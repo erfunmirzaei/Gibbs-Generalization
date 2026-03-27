@@ -6,18 +6,32 @@ experiments across different beta values with multiple repetitions.
 """
 import math
 import torch
+import torch.nn as nn
 import torch.optim as optim
 import time
 import os
 import csv
 import random
 from datetime import datetime
-from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
+from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss, PBBBoundedNLLLoss
 from torch.nn import BCEWithLogitsLoss
 from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
 from sgld import SGLD
 from new_MALA import MALA, StepSizeTuner
 from statistics import mean
+
+# Optional PBB imports (for PBB model comparison)
+try:
+    from pbb_models import NNet4l, CNNet4l
+    from pbb_prior import initialize_model_with_prior
+    from pbb_truncated_prior import (
+        initialize_prior_truncated_gaussian,
+        build_layerwise_sigma_map,
+        build_sgld_param_groups_from_sigma_map,
+    )
+    PBB_AVAILABLE = True
+except ImportError:
+    PBB_AVAILABLE = False
 
 def transform_bce_to_unit_interval(bce_loss, l_max=2.0):
     """
@@ -133,10 +147,95 @@ def get_a0_for_beta(beta, a0):
     else:
         raise ValueError(f"a0 must be int, float, dict, or callable, got {type(a0)}")
 
+
+def build_sgld_optimizer(
+    model,
+    lr,
+    sigma_gauss_prior,
+    beta,
+    add_noise=True,
+    use_layerwise_prior_in_sgld=False,
+    layerwise_prior_scale=1.0,
+    max_layerwise_weight_decay=None,
+):
+    """
+    Build SGLD optimizer.
+
+    Default behavior (existing experiments): single global sigma via sigma_gauss_prior.
+    Optional behavior (PBB-style): layer-wise sigmas based on fan-in for per-parameter
+    Gaussian prior regularization strength.
+    """
+    if use_layerwise_prior_in_sgld and PBB_AVAILABLE:
+        sigma_map = build_layerwise_sigma_map(
+            model,
+            sigma_scale=layerwise_prior_scale,
+            fallback_sigma=sigma_gauss_prior,
+        )
+        param_groups = build_sgld_param_groups_from_sigma_map(model, sigma_map, beta=beta)
+
+        if max_layerwise_weight_decay is not None:
+            clipped_count = 0
+            max_wd = float(max_layerwise_weight_decay)
+            for group in param_groups:
+                wd = float(group.get("weight_decay", 0.0))
+                if wd > max_wd:
+                    group["weight_decay"] = max_wd
+                    clipped_count += 1
+            if clipped_count > 0:
+                print(
+                    f"[training] Clipped {clipped_count}/{len(param_groups)} layer-wise weight decays "
+                    f"to {max_wd} for numerical stability"
+                )
+
+        optimizer = SGLD(
+            param_groups,
+            lr=lr,
+            sigma_gauss_prior=sigma_gauss_prior,
+            beta=beta,
+            add_noise=add_noise,
+        )
+        return optimizer
+
+    return SGLD(
+        model.parameters(),
+        lr=lr,
+        sigma_gauss_prior=sigma_gauss_prior,
+        beta=beta,
+        add_noise=add_noise,
+    )
+
+
+def _predict_from_outputs(outputs):
+    """Return class predictions compatible with binary and multiclass heads."""
+    logits = outputs.squeeze()
+
+    # Binary output: shape [N] or [N, 1]
+    if logits.ndim <= 1:
+        return (logits > 0).long()
+    if logits.ndim == 2 and logits.size(1) == 1:
+        return (logits.squeeze(1) > 0).long()
+
+    # Multiclass output: shape [N, C]
+    return torch.argmax(logits, dim=1)
+
+
+def _count_correct_predictions(predicted, targets):
+    """Count correctly classified samples for class-index or one-hot targets."""
+    if targets.ndim > 1:
+        if targets.size(-1) == 1:
+            targets = targets.squeeze(-1)
+        else:
+            targets = torch.argmax(targets, dim=1)
+
+    return (predicted == targets).sum().item()
+
 def train_sgld_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
                      beta, device, dataset_type,
-                     l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True):
+                     l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True,
+                     prior_type='gaussian', use_layerwise_prior_in_sgld=False,
+                     layerwise_prior_scale=1.0, max_epochs=None, pmin=None,
+                     max_layerwise_weight_decay=None):
     """
     Train a neural network using Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -162,6 +261,9 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         eta (float): Learning rate threshold parameter (lr >= eta/beta).
         eps (float): Convergence threshold for EMA training loss difference.
         add_noise (bool): Whether to add Langevin noise during SGLD updates.
+        max_epochs (int, optional): Maximum number of epochs (full passes through batch) to run.
+                                   If None, uses convergence criterion only. If set, training stops
+                                   when max_epochs is reached regardless of convergence.
     
     Returns:
         tuple: Contains (train_losses, test_losses, train_accuracies, test_accuracies,
@@ -181,13 +283,26 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
+    elif loss.lower() == 'nll':
+        criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
+    elif loss.lower() == 'ce':
+        criterion = nn.CrossEntropyLoss()
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
+    print(f"[training] criterion={criterion.__class__.__name__}")
 
     # Initialize SGLD optimizer with inverse temperature
-    optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
-                    beta=beta, add_noise=add_noise)
+    optimizer = build_sgld_optimizer(
+        model=model,
+        lr=a0,
+        sigma_gauss_prior=sigma_gauss_prior,
+        beta=beta,
+        add_noise=add_noise,
+        use_layerwise_prior_in_sgld=use_layerwise_prior_in_sgld,
+        layerwise_prior_scale=layerwise_prior_scale,
+        max_layerwise_weight_decay=max_layerwise_weight_decay,
+    )
     # optimizer = MALA(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, beta=beta)
     # Learning rate scheduler with threshold: lr_t = max(a0 * t^(-b), 0.01)
     # This stops the decay when learning rate reaches 0.01
@@ -223,6 +338,8 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
     # print(f"Learning rate scheduler: power law decay with threshold at {lr_threshold}")
     print(f"Dataset type: {dataset_type}, Device: {device}")
+    if max_epochs is None:
+        print("[training] max_epochs=None -> using convergence-only stopping (same style as binary training)")
     
     # Progress tracking
     start_time = time.time()
@@ -237,7 +354,15 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             learning_rates.append(0.0)  # No learning rate for beta=0 prior sampling
             optimizer.zero_grad(set_to_none=True)
             # Reinitialize model weights from prior
-            model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
+            if use_layerwise_prior_in_sgld and PBB_AVAILABLE and str(prior_type).lower() in ['truncated_gaussian', 'trunc_gaussian', 'truncnorm']:
+                model_cpu = initialize_prior_truncated_gaussian(
+                    model_cpu,
+                    sigma_scale=layerwise_prior_scale,
+                    truncation=2.0,
+                    seed=42 + i * 1000,
+                )
+            else:
+                model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
             # Use default initialization for prior sampling but with different seeds
             # torch.manual_seed(42+i*1000)
             # for layer in model_cpu.children():
@@ -298,6 +423,10 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 )
 
     while (EMA_train_losses[-1] - EMA_train_losses[-2] < eps or epoch <  min_steps / len(train_loader)) and beta > 0.0:
+        # Check max_epochs limit if specified
+        if max_epochs is not None and epoch >= max_epochs:
+            print(f'   Reached maximum epochs limit: {max_epochs}. Stopping training.')
+            break
     # while epoch < 20000 and beta > 0.0:  # Large max epoch, we will break based on EMA convergence
         # Training phase
         model.train()
@@ -318,7 +447,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             outputs = model(batch_x)
              
             loss_fn = criterion(outputs.squeeze(), batch_y)
-            predicted = (outputs.squeeze() > 0).float()
+            predicted = _predict_from_outputs(outputs)
             zero_one_loss = zero_one_criterion(outputs, batch_y)
             
             loss_fn.backward()
@@ -359,7 +488,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             train_loss_total += bce_val
             train_zero_one_total += zeroOne_val
             train_total += batch_y.size(0)
-            train_correct += (predicted == batch_y).sum().item()
+            train_correct += _count_correct_predictions(predicted, batch_y)
             # EMA_train_BCE_losses.append(EMA_alpha_BCE *  bce_val  + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses[-1])
             # EMA_train_zero_one_losses.append( EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_train_zero_one_losses[-1])
             # EMA_train_BCE_losses_sq.append(EMA_alpha_BCE * (bce_val**2) + (1 - EMA_alpha_BCE) * EMA_train_BCE_losses_sq[-1])
@@ -391,7 +520,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 outputs = model(batch_x)
 
                 loss_fn = criterion(outputs.squeeze(), batch_y)
-                predicted = (outputs.squeeze() > 0).float()
+                predicted = _predict_from_outputs(outputs)
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
 
                 bce_val = loss_fn.item()
@@ -399,7 +528,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 test_loss_total += bce_val
                 test_zero_one_total += zeroOne_val
                 test_total += batch_y.size(0)
-                test_correct += (predicted == batch_y).sum().item()
+                test_correct += _count_correct_predictions(predicted, batch_y)
 
                 # EMA_test_BCE_losses.append(EMA_alpha_BCE * bce_val + (1 - EMA_alpha_BCE) * EMA_test_BCE_losses[-1])
                 # EMA_test_zero_one_losses.append(EMA_alpha_BCE * zeroOne_val + (1 - EMA_alpha_BCE) * EMA_test_zero_one_losses[-1])
@@ -463,7 +592,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 outputs = model(batch_x)
                 
                 loss_fn = criterion(outputs.squeeze(), batch_y)
-                predicted = (outputs.squeeze() > 0).float()
+                predicted = _predict_from_outputs(outputs)
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
                 
                 loss_fn.backward()
@@ -499,7 +628,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                 train_loss_total += bce_val
                 train_zero_one_total += zeroOne_val
                 train_total += batch_y.size(0)
-                train_correct += (predicted == batch_y).sum().item()
+                train_correct += _count_correct_predictions(predicted, batch_y)
 
                 avg_train_BCE_losses.append(bce_val)
                 avg_train_zero_one_losses.append(zeroOne_val)
@@ -532,7 +661,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                     outputs = model(batch_x)
 
                     loss_fn = criterion(outputs.squeeze(), batch_y)
-                    predicted = (outputs.squeeze() > 0).float()
+                    predicted = _predict_from_outputs(outputs)
                     zero_one_loss = zero_one_criterion(outputs, batch_y)
 
                     test_bce_val = loss_fn.item()
@@ -540,7 +669,7 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
                     test_loss_total += test_bce_val
                     test_zero_one_total += zeroOne_val
                     test_total += batch_y.size(0)
-                    test_correct += (predicted == batch_y).sum().item()
+                    test_correct += _count_correct_predictions(predicted, batch_y)
 
                     avg_test_BCE_losses.append(test_bce_val)
                     avg_test_zero_one_losses.append(zeroOne_val)
@@ -591,7 +720,9 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
                      a0, b, sigma_gauss_prior, 
                      beta_values, device, dataset_type,
                      l_max, alpha_average, alpha_stop,  eta, eps, add_noise=True,
-                     min_steps_first_beta=None):
+                     min_steps_first_beta=None, prior_type='gaussian',
+                     use_layerwise_prior_in_sgld=False, layerwise_prior_scale=1.0,
+                     pmin=None, max_layerwise_weight_decay=None):
     """
     Train a neural network using Annealed Stochastic Gradient Langevin Dynamics (SGLD).
     
@@ -639,9 +770,14 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
+    elif loss.lower() == 'nll':
+        criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
+    elif loss.lower() == 'ce':
+        criterion = nn.CrossEntropyLoss()
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
+    print(f"[training] criterion={criterion.__class__.__name__}")
 
     # Lists to store final results for each beta
     list_train_BCE_losses = []
@@ -690,8 +826,16 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
     for beta_idx, beta in enumerate(sorted(beta_values)):
         print(f"\n--- Beta {beta_idx + 1}/{len(beta_values)}: β = {beta} ---")
 
-        optimizer = SGLD(model.parameters(), lr=a0, sigma_gauss_prior=sigma_gauss_prior, 
-                    beta=beta, add_noise=add_noise)
+        optimizer = build_sgld_optimizer(
+            model=model,
+            lr=a0,
+            sigma_gauss_prior=sigma_gauss_prior,
+            beta=beta,
+            add_noise=add_noise,
+            use_layerwise_prior_in_sgld=use_layerwise_prior_in_sgld,
+            layerwise_prior_scale=layerwise_prior_scale,
+            max_layerwise_weight_decay=max_layerwise_weight_decay,
+        )
         
         # Tracking for this beta
         local_epoch = 0
@@ -711,7 +855,15 @@ def train_annealed_sgld_model(loss, model, train_loader, test_loader, min_steps,
             for i in range(num_prior_samples):
                 optimizer.zero_grad(set_to_none=True)
                 # Reinitialize model weights from prior
-                model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
+                if use_layerwise_prior_in_sgld and PBB_AVAILABLE and str(prior_type).lower() in ['truncated_gaussian', 'trunc_gaussian', 'truncnorm']:
+                    model_cpu = initialize_prior_truncated_gaussian(
+                        model_cpu,
+                        sigma_scale=layerwise_prior_scale,
+                        truncation=2.0,
+                        seed=42 + i * 1000,
+                    )
+                else:
+                    model_cpu = initialize_nn_weights_gaussian(model_cpu, sigma=sigma_gauss_prior, seed=42+i*1000)
                 
                 # Compute train loss
                 batch_x, batch_y = next(iter(train_loader))
@@ -963,7 +1115,7 @@ def check_stopping_criterion(thinned_loss_samples, rse_threshold=0.01):
 def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps, 
                      a0, b, sigma_gauss_prior, 
                      beta_values, device, dataset_type,
-                     l_max, alpha_average, alpha_stop,  eta, eps):
+                     l_max, alpha_average, alpha_stop,  eta, eps, pmin=None):
     """
     Train a neural network using Annealed MALA (Metropolis-Adjusted Langevin Algorithm).
     
@@ -1024,9 +1176,14 @@ def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps,
         criterion = TangentLoss()
     elif loss.lower() == 'savage':
         criterion = SavageLoss()
+    elif loss.lower() == 'nll':
+        criterion = PBBBoundedNLLLoss(pmin=pmin) if pmin is not None else nn.NLLLoss()
+    elif loss.lower() == 'ce':
+        criterion = nn.CrossEntropyLoss()
     else:
         criterion = BCEWithLogitsLoss()  
     zero_one_criterion = ZeroOneLoss()
+    print(f"[training] criterion={criterion.__class__.__name__}")
 
     # Lists to store final results for each beta
     list_train_BCE_losses = []
@@ -1258,18 +1415,190 @@ def train_annealed_mala_model(loss, model, train_loader, test_loader, min_steps,
     print(f"\n{'='*80}")
     print(f"Annealed MALA completed for all {len(beta_values)} beta values")
     print(f"{'='*80}\n")
-    
+
     # Return results in format compatible with non-annealing case
     return (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
             list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, 
             list_EMA_test_01_losses, list_EMA_grad_norm, list_num_epochs_per_beta)
 
 
+def create_model_with_optional_pbb(dataset_type, n_hidden_layers, width, device,
+                                    use_pbb_models=False, pbb_architecture=None,
+                                    prior_type='gaussian', sigma_prior=1.0, seed=42,
+                                    initialize_pbb_with_prior=True):
+    """
+    Create a model, optionally using PBB architectures with data-free prior.
+    
+    Args:
+        dataset_type (str): Dataset type ('mnist', 'cifar10', 'cifar100', 'synth')
+        n_hidden_layers (int or str): Number of hidden layers or architecture name ('L', 'V')
+        width (int): Width of hidden layers
+        device (str): Device to place model on
+        use_pbb_models (bool): Whether to use PBB models (NNet4l or CNNet4l)
+        pbb_architecture (str): 'fc' for NNet4l or 'cnn' for CNNet4l (only if use_pbb_models=True)
+        prior_type (str): 'gaussian' or 'laplace' for PBB prior
+        sigma_prior (float): Scale of the prior
+        seed (int): Random seed for reproducibility
+        
+    Returns:
+        torch.nn.Module: The created model, moved to device
+    """
+    
+    # Create PBB models if requested
+    if use_pbb_models:
+        if not PBB_AVAILABLE:
+            raise ImportError("PBB mode requested but PBB modules are not available.")
+        if dataset_type != 'mnist':
+            raise ValueError(f"PBB mode currently supports only MNIST, got dataset_type='{dataset_type}'")
+        if pbb_architecture is None:
+            raise ValueError("PBB mode requested but pbb_architecture is None.")
+        if sigma_prior is None:
+            raise ValueError("PBB mode requested but sigma_prior is None.")
+
+        print(f"\n📦 Using PBB Model: {pbb_architecture.upper()}")
+        print(f"   Prior: {prior_type} with scale σ = {sigma_prior}")
+        
+        if pbb_architecture.lower() in ['fc', 'nnet4l']:
+            model = NNet4l(num_classes=10, dropout_prob=0.0)
+        elif pbb_architecture.lower() in ['cnn', 'cnnet4l']:
+            model = CNNet4l(num_classes=10, dropout_prob=0.0)
+        else:
+            raise ValueError(f"Unknown PBB architecture: {pbb_architecture}")
+        
+        if not initialize_pbb_with_prior:
+            print("   ✓ Using default model initialization (PBB prior initialization disabled)")
+            return model.to(device)
+
+        # Initialize model with data-free prior
+        normalized_prior = str(prior_type).lower() if prior_type is not None else 'gaussian'
+        if normalized_prior in ['truncated_gaussian', 'trunc_gaussian', 'truncnorm']:
+            model = initialize_prior_truncated_gaussian(
+                model,
+                sigma_scale=sigma_prior,
+                truncation=2.0,
+                seed=seed,
+            )
+        else:
+            model = initialize_model_with_prior(model, prior_type=normalized_prior,
+                                               sigma_prior=sigma_prior, seed=seed)
+
+        print(f"   ✓ Model initialized with data-free prior")
+        
+        return model.to(device)
+    
+    # Fall back to standard model creation if PBB is not used or not available
+    if dataset_type == 'mnist':
+        if n_hidden_layers == 1:
+            model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 2:
+            model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 3:
+            model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 'L':
+            model = LeNet5(num_classes=1)
+    elif dataset_type in ('cifar10', 'cifar100'):
+        if n_hidden_layers == 1:
+            model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 2:
+            model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 3:
+            model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 'V':
+            model = VGG16_CIFAR(num_classes=1)
+    else:  # synth dataset
+        if n_hidden_layers == 1:
+            model = FCN1L(input_dim=4, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 2:
+            model = FCN2L(input_dim=4, hidden_dim=width, output_dim=1)
+        elif n_hidden_layers == 3:
+            model = FCN3L(input_dim=4, hidden_dim=width, output_dim=1)
+    
+    return model.to(device)
+
+
+def save_checkpoint(checkpoint_dir, seed, beta_values, completed_betas, 
+                   list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
+                   list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses,
+                   list_EMA_grad_norm, list_num_epochs_per_beta, list_EMA_var_train_BCE_losses, list_EMA_var_test_BCE_losses,
+                   sample_size=None, config_dict=None):
+    """
+    Save checkpoint of experiment progress to resume later.
+    
+    Saves all necessary information to completely resume training and recreate CSV files.
+    
+    Args:
+        checkpoint_dir (str): Directory to save checkpoints in.
+        seed (int): Random seed for this experiment.
+        beta_values (list): All beta values for this experiment.
+        completed_betas (list): List of betas that have been completed.
+        list_train_BCE_losses, list_test_BCE_losses, etc. (lists): Accumulated loss lists.
+        sample_size (int, optional): Size of training dataset.
+        config_dict (dict, optional): Configuration parameters for CSV summary recreation.
+    
+    Returns:
+        str: Path to the saved checkpoint file.
+    """
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    checkpoint_data = {
+        'seed': seed,
+        'beta_values': beta_values,
+        'completed_betas': completed_betas,
+        'list_train_BCE_losses': list_train_BCE_losses,
+        'list_test_BCE_losses': list_test_BCE_losses,
+        'list_train_01_losses': list_train_01_losses,
+        'list_test_01_losses': list_test_01_losses,
+        'list_EMA_train_BCE_losses': list_EMA_train_BCE_losses,
+        'list_EMA_test_BCE_losses': list_EMA_test_BCE_losses,
+        'list_EMA_train_01_losses': list_EMA_train_01_losses,
+        'list_EMA_test_01_losses': list_EMA_test_01_losses,
+        'list_EMA_grad_norm': list_EMA_grad_norm,
+        'list_num_epochs_per_beta': list_num_epochs_per_beta,
+        'list_EMA_var_train_BCE_losses': list_EMA_var_train_BCE_losses,
+        'list_EMA_var_test_BCE_losses': list_EMA_var_test_BCE_losses,
+        'sample_size': sample_size,
+        'config_dict': config_dict or {},  # Store config for CSV recreation
+    }
+    
+    checkpoint_file = os.path.join(checkpoint_dir, f'checkpoint_seed_{seed}.pt')
+    torch.save(checkpoint_data, checkpoint_file)
+    print(f"   ✓ Checkpoint saved: {checkpoint_file} (completed {len(completed_betas)} betas)")
+    
+    return checkpoint_file
+
+
+def load_checkpoint(checkpoint_dir, seed):
+    """
+    Load experiment progress from checkpoint.
+    
+    Args:
+        checkpoint_dir (str): Directory containing checkpoints.
+        seed (int): Random seed for this experiment.
+    
+    Returns:
+        dict: Checkpoint data if found, None otherwise.
+    """
+    checkpoint_file = os.path.join(checkpoint_dir, f'checkpoint_seed_{seed}.pt')
+    
+    if os.path.exists(checkpoint_file):
+        checkpoint_data = torch.load(checkpoint_file)
+        print(f"   ✓ Checkpoint loaded: {checkpoint_file}")
+        print(f"   ✓ Resuming from {len(checkpoint_data['completed_betas'])} completed betas: {checkpoint_data['completed_betas']}")
+        return checkpoint_data
+    
+    return None
+
+
 def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_hidden_layers, width,
                          dataset_type, use_random_labels, l_max,  train_loader, test_loader,min_steps,
                          alpha_average, alpha_stop, eta, eps, test_mode=False, add_grad_norm=False, 
                          sgld_num = 1, annealed = False, add_noise=True, save_every=1, min_steps_first_beta=None,
-                         seed=42, selected_classes=None):
+                         seed=42, selected_classes=None, use_pbb_models=False, pbb_architecture=None,
+                         prior_type=None, sigma_prior=None, checkpoint_dir='checkpoints', resume_from_checkpoint=True,
+                         max_epochs=None, pmin=None,
+                         layerwise_sgld_prior_decay_mode='off',
+                         max_layerwise_weight_decay=50.0,
+                         initialize_pbb_with_prior=True):
     """
     Run SGLD experiments across multiple beta values for generalization bound computation.
     
@@ -1307,6 +1636,11 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             If None, uses min_steps for all betas. Should be larger than min_steps.
         seed (int, optional): Random seed for reproducibility of training. Defaults to 42.
         selected_classes (list, optional): Chosen class ids/groups used to build the dataset.
+        checkpoint_dir (str, optional): Directory to save/load checkpoints. Defaults to 'checkpoints'.
+        resume_from_checkpoint (bool, optional): If True, resumes from checkpoint if it exists. Defaults to True.
+        max_epochs (int, optional): Maximum number of epochs (full passes through batch) to train per beta.
+                                   If None, uses convergence criterion only. If set, training stops when
+                                   max_epochs is reached regardless of convergence (hard limit on training time).
     
     Returns:
         list: Paths to CSV files generated during the experiment.
@@ -1314,6 +1648,9 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
     Note:
         If beta=0 is not in beta_values, it will be automatically added for proper
         generalization bound computation through prior sampling.
+        
+        Checkpoints are automatically saved after each beta is completed, allowing
+        resumption from where the experiment left off (useful for long training on servers).
     """ 
     # Ensure beta=0 is included for proper bound computation
     extended_beta_values = list(beta_values)
@@ -1322,6 +1659,56 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         print(f"Added beta=0 for proper generalization bound computation")    
 
     print(f"🆕 Starting new experiment")
+
+    # Try to load from checkpoint if resume is enabled (only for non-annealed mode)
+    checkpoint_data = None
+    completed_betas = []
+    if resume_from_checkpoint and sgld_num == 1 and not annealed:
+        checkpoint_data = load_checkpoint(checkpoint_dir, seed)
+        if checkpoint_data is not None:
+            extended_beta_values = checkpoint_data['beta_values']
+            completed_betas = checkpoint_data['completed_betas']
+            list_train_BCE_losses = checkpoint_data['list_train_BCE_losses']
+            list_test_BCE_losses = checkpoint_data['list_test_BCE_losses']
+            list_train_01_losses = checkpoint_data['list_train_01_losses']
+            list_test_01_losses = checkpoint_data['list_test_01_losses']
+            list_EMA_train_BCE_losses = checkpoint_data['list_EMA_train_BCE_losses']
+            list_EMA_test_BCE_losses = checkpoint_data['list_EMA_test_BCE_losses']
+            list_EMA_train_01_losses = checkpoint_data['list_EMA_train_01_losses']
+            list_EMA_test_01_losses = checkpoint_data['list_EMA_test_01_losses']
+            list_EMA_grad_norm = checkpoint_data['list_EMA_grad_norm']
+            list_num_epochs_per_beta = checkpoint_data['list_num_epochs_per_beta']
+            list_EMA_var_train_BCE_losses = checkpoint_data['list_EMA_var_train_BCE_losses']
+            list_EMA_var_test_BCE_losses = checkpoint_data['list_EMA_var_test_BCE_losses']
+        else:
+            print("   ℹ️ No checkpoint found, starting fresh experiment")
+            # Initialize empty lists for fresh start
+            list_train_BCE_losses = []
+            list_test_BCE_losses = []
+            list_train_01_losses = []
+            list_test_01_losses = []
+            list_EMA_train_BCE_losses = []
+            list_EMA_test_BCE_losses = []
+            list_EMA_train_01_losses = []
+            list_EMA_test_01_losses = []
+            list_EMA_grad_norm = []
+            list_num_epochs_per_beta = []
+            list_EMA_var_train_BCE_losses = []
+            list_EMA_var_test_BCE_losses = []
+    else:
+        # Initialize empty lists for non-checkpoint scenarios
+        list_train_BCE_losses = []
+        list_test_BCE_losses = []
+        list_train_01_losses = []
+        list_test_01_losses = []
+        list_EMA_train_BCE_losses = []
+        list_EMA_test_BCE_losses = []
+        list_EMA_train_01_losses = []
+        list_EMA_test_01_losses = []
+        list_EMA_grad_norm = []
+        list_num_epochs_per_beta = []
+        list_EMA_var_train_BCE_losses = []
+        list_EMA_var_test_BCE_losses = []
 
     # Set random seeds for reproducibility of training
     torch.manual_seed(seed)
@@ -1332,17 +1719,6 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         torch.cuda.manual_seed_all(seed)
     print(f"Training random seed set to: {seed}")
 
-    list_train_BCE_losses = []
-    list_test_BCE_losses = []
-    list_train_01_losses = []
-    list_test_01_losses = []
-    list_EMA_train_BCE_losses = []
-    list_EMA_test_BCE_losses = []
-    list_EMA_train_01_losses = []
-    list_EMA_test_01_losses = []
-    list_EMA_grad_norm = []
-    list_EMA_var_train_BCE_losses = []
-    list_EMA_var_test_BCE_losses = []
     saved_csv_paths = []
 
     print(f"\nConfiguration:")    
@@ -1369,30 +1745,76 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
 
     selected_classes_str = str(selected_classes) if selected_classes is not None else 'N/A'
 
+    normalized_prior_type = str(prior_type).lower() if prior_type is not None else 'gaussian'
+    layerwise_mode = str(layerwise_sgld_prior_decay_mode).lower()
+    if layerwise_mode not in {'off', 'adaptive', 'on'}:
+        raise ValueError(
+            "layerwise_sgld_prior_decay_mode must be one of 'off', 'adaptive', 'on'"
+        )
+
+    can_use_layerwise = (
+        use_pbb_models
+        and normalized_prior_type in ['truncated_gaussian', 'trunc_gaussian', 'truncnorm']
+        and dataset_type == 'mnist'
+    )
+    use_layerwise_prior_in_sgld = can_use_layerwise and layerwise_mode in {'adaptive', 'on'}
+    layerwise_prior_scale = sigma_prior if sigma_prior is not None else 1.0
+    effective_max_layerwise_weight_decay = None
+    if use_layerwise_prior_in_sgld and layerwise_mode == 'adaptive':
+        effective_max_layerwise_weight_decay = float(max_layerwise_weight_decay)
+    
+    # Store all configuration for checkpoint (needed for CSV recreation)
+    config_dict = {
+        'device': str(device),
+        'loss': loss,
+        'l_max': l_max,
+        'n_hidden_layers': n_hidden_layers,
+        'width': width,
+        'dataset_type': dataset_type,
+        'dataset_name': dataset_name,
+        'selected_classes_str': selected_classes_str,
+        'use_random_labels': use_random_labels,
+        'min_steps': min_steps,
+        'alpha_average': alpha_average,
+        'alpha_stop': alpha_stop,
+        'eta': eta,
+        'eps': eps,
+        'b': b,
+        'sigma_gauss_prior': sigma_gauss_prior,
+        'pmin': pmin,
+        'max_epochs': max_epochs,
+    }
+
+    if use_pbb_models and normalized_prior_type in ['truncated_gaussian', 'trunc_gaussian', 'truncnorm'] and dataset_type == 'mnist':
+        if use_layerwise_prior_in_sgld:
+            if layerwise_mode == 'adaptive':
+                print(
+                    "Using truncated-Gaussian prior initialization with ADAPTIVE layer-wise SGLD prior decay "
+                    f"(max weight_decay={effective_max_layerwise_weight_decay})"
+                )
+            else:
+                print("Using truncated-Gaussian prior initialization with FULL layer-wise SGLD prior decay")
+        else:
+            print("Using truncated-Gaussian prior initialization (layer-wise SGLD prior decay disabled)")
+
     if sgld_num == 1 and annealed:
         # In annealed mode, we use a single model and transition between betas
         print(f"\n🔥 Running ANNEALED SGLD with {len(extended_beta_values)} beta values")
         current_a0 = get_a0_for_beta(extended_beta_values[0], a0)  # Use a0 for first beta
         
-        # Create model once for all betas
-        if dataset_type == 'mnist':
-            if n_hidden_layers == 1:
-                model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 2:
-                model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 3:
-                model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 'L':
-                model = LeNet5(num_classes=1)
-        elif dataset_type in ('cifar10', 'cifar100'):
-            if n_hidden_layers == 1:
-                model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 2:
-                model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 3:
-                model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 'V':
-                model = VGG16_CIFAR(num_classes=1)
+        # Create model once for all betas (supports optional PBB setup)
+        model = create_model_with_optional_pbb(
+            dataset_type=dataset_type,
+            n_hidden_layers=n_hidden_layers,
+            width=width,
+            device=device,
+            use_pbb_models=use_pbb_models,
+            pbb_architecture=pbb_architecture,
+            prior_type=prior_type,
+            sigma_prior=sigma_prior,
+            seed=seed,
+            initialize_pbb_with_prior=initialize_pbb_with_prior,
+        )
         
         # Run annealed training (returns results for all betas)
         (list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
@@ -1415,7 +1837,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             eta=eta,
             eps=eps,
             add_noise=add_noise,
-            min_steps_first_beta=min_steps_first_beta  # Pass the parameter
+            min_steps_first_beta=min_steps_first_beta,
+            prior_type=normalized_prior_type,
+            use_layerwise_prior_in_sgld=use_layerwise_prior_in_sgld,
+            layerwise_prior_scale=layerwise_prior_scale,
+            pmin=pmin,
+            max_layerwise_weight_decay=effective_max_layerwise_weight_decay,
         )
         
         # Save results for annealed case
@@ -1499,6 +1926,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         list_num_epochs_per_beta = []
         # Run all beta values for this repetition
         for beta in sorted(extended_beta_values):
+            # Skip if already completed in checkpoint
+            if checkpoint_data is not None and beta in completed_betas:
+                print(f"\n--- Beta = {beta} (SKIPPED - already completed) ---")
+                betas_experimented.append(beta)
+                continue
+                
             betas_experimented.append(beta)
             current_a0 = get_a0_for_beta(beta, a0)
             
@@ -1506,33 +1939,18 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             print(f"Learning rate: {current_a0}")
             
             # Create fresh model for each beta-repetition combination
-            if dataset_type == 'mnist':
-                if n_hidden_layers == 1:
-                    model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 2:
-                    model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 3:
-                    model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 'L':
-                    model = LeNet5(num_classes=1)
-
-            elif dataset_type in ('cifar10', 'cifar100'):
-                if n_hidden_layers == 1:
-                    model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 2:
-                    model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 3:
-                    model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 'V':
-                    model = VGG16_CIFAR(num_classes=1)
-            
-            elif dataset_type == 'synth':
-                if n_hidden_layers == 1:
-                    model = FCN1L(input_dim=4, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 2:
-                    model = FCN2L(input_dim=4, hidden_dim=width, output_dim=1)
-                elif n_hidden_layers == 3:
-                    model = FCN3L(input_dim=4, hidden_dim=width, output_dim=1)
+            model = create_model_with_optional_pbb(
+                dataset_type=dataset_type,
+                n_hidden_layers=n_hidden_layers,
+                width=width,
+                device=device,
+                use_pbb_models=use_pbb_models,
+                pbb_architecture=pbb_architecture,
+                prior_type=prior_type,
+                sigma_prior=sigma_prior,
+                seed=seed,
+                initialize_pbb_with_prior=initialize_pbb_with_prior,
+            )
 
             # Train the model
             
@@ -1554,6 +1972,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 eta=eta,
                 eps=eps,
                 add_noise=add_noise,
+                prior_type=normalized_prior_type,
+                use_layerwise_prior_in_sgld=use_layerwise_prior_in_sgld,
+                layerwise_prior_scale=layerwise_prior_scale,
+                max_epochs=max_epochs,
+                pmin=pmin,
+                max_layerwise_weight_decay=effective_max_layerwise_weight_decay,
             )
             
 
@@ -1561,10 +1985,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses,
             EMA_train_BCE_losses_sq, EMA_test_BCE_losses_sq, EMA_grad_norm, epoch) = training_results
 
-            list_train_BCE_losses.append(train_losses[-50])
-            list_test_BCE_losses.append(test_losses[-50])
-            list_train_01_losses.append(train_01_losses[-50])
-            list_test_01_losses.append(test_01_losses[-50])
+            # For very short runs (e.g., debug smoke tests), there may be <50 entries.
+            summary_idx = -50 if len(train_losses) >= 50 else 0
+            list_train_BCE_losses.append(train_losses[summary_idx])
+            list_test_BCE_losses.append(test_losses[summary_idx])
+            list_train_01_losses.append(train_01_losses[summary_idx])
+            list_test_01_losses.append(test_01_losses[summary_idx])
             list_EMA_train_BCE_losses.append(mean(EMA_train_BCE_losses))
             list_EMA_test_BCE_losses.append(mean(EMA_test_BCE_losses))
             list_EMA_train_01_losses.append(mean(EMA_train_01_losses))
@@ -1577,6 +2003,13 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             print(f"  Final - Train BCE: {train_losses[-1]:.4f}, Test BCE: {test_losses[-1]:.4f}, "
                     f"Train 0-1: {train_01_losses[-1]:.4f}, Test 0-1: {test_01_losses[-1]:.4f}")
         
+            # Save checkpoint after each beta is completed
+            completed_betas.append(beta)
+            save_checkpoint(checkpoint_dir, seed, extended_beta_values, completed_betas,
+                           list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,
+                           list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses,
+                           list_EMA_grad_norm, list_num_epochs_per_beta, list_EMA_var_train_BCE_losses, list_EMA_var_test_BCE_losses,
+                           sample_size=len(train_loader.dataset), config_dict=config_dict)
 
             # Save a csv file after each repetition if requested
             # Generate filename prefix based on experiment parameters
@@ -1667,25 +2100,19 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         print(f"\n🔥 Running ANNEALED MALA with {len(extended_beta_values)} beta values")
         current_a0 = get_a0_for_beta(extended_beta_values[0], a0)  # Use a0 for first beta
         
-        # Create model once for all betas
-        if dataset_type == 'mnist':
-            if n_hidden_layers == 1:
-                model = FCN1L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 2:
-                model = FCN2L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 3:
-                model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 'L':
-                model = LeNet5(num_classes=1)
-        elif dataset_type in ('cifar10', 'cifar100'):
-            if n_hidden_layers == 1:
-                model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 2:
-                model = FCN2L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 3:
-                model = FCN3L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
-            elif n_hidden_layers == 'V':
-                model = VGG16_CIFAR(num_classes=1)
+        # Create model once for all betas (using helper function for optional PBB support)
+        model = create_model_with_optional_pbb(
+            dataset_type=dataset_type,
+            n_hidden_layers=n_hidden_layers,
+            width=width,
+            device=device,
+            use_pbb_models=use_pbb_models,
+            pbb_architecture=pbb_architecture,
+            prior_type=prior_type,
+            sigma_prior=sigma_prior,
+            seed=seed,
+            initialize_pbb_with_prior=initialize_pbb_with_prior,
+        )
         
         # Initialize model weights from Gaussian prior
         # model = initialize_nn_weights_gaussian(model, sigma=sigma_gauss_prior, seed=seed)
@@ -1710,6 +2137,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             alpha_stop=alpha_stop,
             eta=eta,
             eps=eps,
+            pmin=pmin,
         )
         
         # Save results for annealed case
