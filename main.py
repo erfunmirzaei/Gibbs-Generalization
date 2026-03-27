@@ -29,7 +29,7 @@ USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all 
 # Can be either:
 # - Individual classes: [0, 1] 
 # - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
-MNIST_CLASSES = [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]]  # Even vs Odd digits
+MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  
 
 # CIFAR-10 classes for binary classification (only used when DATASET_TYPE='cifar10')
 # Can be either:

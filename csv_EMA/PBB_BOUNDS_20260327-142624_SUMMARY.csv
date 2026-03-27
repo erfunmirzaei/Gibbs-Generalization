@@ -1,0 +1,2 @@
+beta,mean_train_01,mean_test_01,mean_kl_raw,mean_pbb_empirical_01,mean_predicted_test_01_bound,num_rows
+1000000.0,0.0010000000474974513,0.13500000536441803,120.0,0.008399304913929016,0.15015577425358084,1
