@@ -1,175 +1,36 @@
 """
-Main experiment script for the Gibbs generalization bound experiments.
+Main experiment script for multiclass Gibbs generalization experiments.
 
-This script orchestrates the complete ULA or SGLD experiment, testing different beta values
-and computing PAC-Bayesian generalization bounds for MNIST (binary and multi-class classification).
-
-Comparison with PBB Paper:
---------------------------
-To compare results with the PAC-Bayes with Backprop (PBB) paper (Perez-Ortiz et al., 2020),
-you can use the PBB-compatible architectures and loss functions:
-
-1. Set USE_PBB_CONFIG = True to enable PBB-compatible settings
-2. Choose architecture: PBB_ARCHITECTURE = 'fc' (NNet4l) or 'cnn' (CNNet4l)
-3. Loss function: PBB_LOSS_TYPE = 'nll' (matches PBB) or 'ce'
-4. Prior distribution: PBB_PRIOR_DIST = 'gaussian', 'laplace', or 'truncated_gaussian'
-
-Example for direct PBB comparison:
-    USE_PBB_CONFIG = True
-    PBB_ARCHITECTURE = 'cnn'  # CNNet4l for fair comparison
-    PBB_LOSS_TYPE = 'nll'     # NLL loss used in PBB paper
-    PBB_PRIOR_DIST = 'gaussian'  # Standard Gaussian prior
-
-The networks are defined with the exact same architecture and training setup as the
-original PBB repository (https://github.com/mperezortiz/PBB).
+This script mirrors the structure of main.py but runs MNIST multi-class experiments.
 """
 
-import torch
-import numpy as np
-import random
 import csv
-import sys
+import random
 from datetime import datetime
-from dataset import (
-    get_mnist_binary_dataloaders_partial_random_labels,
-    get_synth_dataloaders
-)
-from multiclass_dataset_functions import (
-    get_mnist_multiclass_dataloaders,
-    get_mnist_multiclass_dataloaders_partial_random_labels
-)
+
+import numpy as np
+import torch
+
+from multiclass_dataset_functions import get_mnist_multiclass_dataloaders_partial_random_labels
 from training_multiclass import run_beta_experiments
-from pbb_models import NNet4l, CNNet4l
-from pbb_prior import initialize_model_with_prior, get_prior_initializer
 
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
-DATASET_TYPE = 'mnist'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
+USE_RANDOM_LABELS = 1  # Probability of randomizing each label in [0, 1]
+DATASET_TYPE = 'mnist'  # Multiclass path currently supports MNIST
 SEEDS = [42]  # Random seeds for stability analysis
-DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
-USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
+DATASET_SEED = 42  # Seed for dataset splitting/label randomization
+USE_SAME_DATASET_ACROSS_SEEDS = True
 
-# MNIST classification mode: 'binary' or 'multiclass'
-MNIST_CLASS_MODE = 'multiclass'  # 'binary' for 2-class, 'multiclass' for multi-class
+# MNIST classes for multi-class classification
+MNIST_CLASSES_MULTICLASS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-# MNIST classes for binary classification (only used when DATASET_TYPE='mnist' and MNIST_CLASS_MODE='binary')
-# Can be either:
-# - Individual classes: [0, 1] 
-# - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
-MNIST_CLASSES_BINARY = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]  # Even vs Odd digits
+# Experiment-level controls
+LOSS_FUNCTION = 'ce'  # 'ce', 'bbce', 'savage', 'nll'
+SGLD_SIGMA_GAUSS_PRIOR = 5.0
+MAX_ITER = 500
+STOPPING_MODE = 'max_iter_only'  # 'ema' or 'max_iter_only'
 
-# MNIST classes for multi-class classification (only used when DATASET_TYPE='mnist' and MNIST_CLASS_MODE='multiclass')
-# Can include any subset of digits 0-9
-MNIST_CLASSES_MULTICLASS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]  # All 10 digits
-
-
-# ---------------------------------------------------------------------------
-# Easy experiment switches
-# ---------------------------------------------------------------------------
-# Main switch:
-# - Use one of: 'main_like_multiclass', 'pbb_strict', 'pbb_adaptive'
-# - Or set to None to use MANUAL_CONFIG below.
-EXPERIMENT_PRESET = 'main_like_multiclass'
-
-# Manual fallback when EXPERIMENT_PRESET is None.
-# This block is also used as the base config that presets override.
-MANUAL_CONFIG = {
-    'USE_PBB_CONFIG': False,
-    'PBB_ARCHITECTURE': 'fc',  # 'fc' (NNet4l) or 'cnn' (CNNet4l)
-    'LOSS_FUNCTION': 'nll',    # 'bbce', 'savage', 'nll', or 'ce'
-    'PBB_PMIN': 1e-4,          # Used when LOSS_FUNCTION='nll'
-    'SGLD_SIGMA_GAUSS_PRIOR': 5.0,  # SGLD optimizer prior sigma
-    'INITIALIZE_PBB_WITH_PRIOR': True,
-    'PBB_PRIOR_DIST': 'gaussian',   # 'gaussian', 'laplace', 'truncated_gaussian'
-    'PBB_SIGMA_PRIOR': 0.03,        # PBB init prior scale (not SGLD sigma)
-    'MAX_ITER': None,
-    'STOPPING_MODE': 'max_iter_only',  # 'ema' or 'max_iter_only'
-    # Layer-wise SGLD prior decay control for truncated-Gaussian PBB mode.
-    'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'adaptive',  # 'off', 'adaptive', 'on'
-    'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
-    'ASK_BEFORE_LAYERWISE_SGLD': True,
-}
-
-# Presets only override keys that differ from MANUAL_CONFIG.
-PRESET_CONFIGS = {
-    # Closest behavior to main.py style, but with multiclass data path.
-    'main_like_multiclass': {
-        'USE_PBB_CONFIG': True,
-        'PBB_ARCHITECTURE': 'fc',
-        'LOSS_FUNCTION': 'nll',
-        'PBB_PMIN': 1e-4,
-        'SGLD_SIGMA_GAUSS_PRIOR': 5.0,
-        'INITIALIZE_PBB_WITH_PRIOR': False,
-        'MAX_ITER': 500,
-        'STOPPING_MODE': 'max_iter_only',
-        'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'off',
-        'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
-        'ASK_BEFORE_LAYERWISE_SGLD': False,
-    },
-    # Closest to strict PBB setup; may be unstable depending on sigma/beta settings.
-    'pbb_strict': {
-        'USE_PBB_CONFIG': True,
-        'PBB_ARCHITECTURE': 'fc',
-        'LOSS_FUNCTION': 'nll',
-        'SGLD_SIGMA_GAUSS_PRIOR': 5.0,
-        'INITIALIZE_PBB_WITH_PRIOR': True,
-        'PBB_PRIOR_DIST': 'truncated_gaussian',
-        'PBB_SIGMA_PRIOR': 0.03,
-        'PBB_PMIN': 1e-4,
-        'MAX_ITER': 500,
-        'STOPPING_MODE': 'max_iter_only',
-        'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'on',
-        'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
-        'ASK_BEFORE_LAYERWISE_SGLD': True,
-    },
-    # PBB-like with adaptive stability guard on layer-wise SGLD decay.
-    'pbb_adaptive': {
-        'USE_PBB_CONFIG': True,
-        'PBB_ARCHITECTURE': 'fc',
-        'LOSS_FUNCTION': 'nll',
-        'SGLD_SIGMA_GAUSS_PRIOR': 5.0,
-        'INITIALIZE_PBB_WITH_PRIOR': True,
-        'PBB_PRIOR_DIST': 'truncated_gaussian',
-        'PBB_SIGMA_PRIOR': 0.03,
-        'PBB_PMIN': 1e-4,
-        'MAX_ITER': None,
-        'STOPPING_MODE': 'ema',
-        'LAYERWISE_SGLD_PRIOR_DECAY_MODE': 'adaptive',
-        'LAYERWISE_SGLD_MAX_WEIGHT_DECAY': 50.0,
-        'ASK_BEFORE_LAYERWISE_SGLD': True,
-    },
-}
-
-
-def resolve_experiment_config(preset_name):
-    """Merge MANUAL_CONFIG with an optional preset override."""
-    config = dict(MANUAL_CONFIG)
-    if preset_name is None:
-        return config
-
-    if preset_name not in PRESET_CONFIGS:
-        valid = ', '.join(sorted(PRESET_CONFIGS.keys()))
-        raise ValueError(f"Unknown EXPERIMENT_PRESET='{preset_name}'. Valid values: {valid}, or None")
-
-    config.update(PRESET_CONFIGS[preset_name])
-    return config
-
-
-_cfg = resolve_experiment_config(EXPERIMENT_PRESET)
-USE_PBB_CONFIG = _cfg['USE_PBB_CONFIG']
-PBB_ARCHITECTURE = _cfg['PBB_ARCHITECTURE']
-LOSS_FUNCTION = _cfg['LOSS_FUNCTION']
-PBB_PMIN = _cfg['PBB_PMIN']
-SGLD_SIGMA_GAUSS_PRIOR = _cfg['SGLD_SIGMA_GAUSS_PRIOR']
-INITIALIZE_PBB_WITH_PRIOR = _cfg['INITIALIZE_PBB_WITH_PRIOR']
-PBB_PRIOR_DIST = _cfg['PBB_PRIOR_DIST']
-PBB_SIGMA_PRIOR = _cfg['PBB_SIGMA_PRIOR']
-MAX_ITER = _cfg['MAX_ITER']
-STOPPING_MODE = _cfg['STOPPING_MODE']
-LAYERWISE_SGLD_PRIOR_DECAY_MODE = _cfg['LAYERWISE_SGLD_PRIOR_DECAY_MODE']
-LAYERWISE_SGLD_MAX_WEIGHT_DECAY = _cfg['LAYERWISE_SGLD_MAX_WEIGHT_DECAY']
-ASK_BEFORE_LAYERWISE_SGLD = _cfg['ASK_BEFORE_LAYERWISE_SGLD']
 
 def set_global_seed(seed):
     """Set random seed across torch/numpy/python for reproducibility."""
@@ -179,61 +40,24 @@ def set_global_seed(seed):
     if torch.cuda.is_available():
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
-    # For fully deterministic behavior on CUDA (may reduce performance)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
 
-def get_pbb_model(architecture: str, num_classes: int = 10, device: str = 'cpu'):
-    """
-    Get a PBB-compatible model (NNet4l or CNNet4l).
-    
-    Args:
-        architecture (str): 'fc' for NNet4l or 'cnn' for CNNet4l
-        num_classes (int): Number of output classes. Default: 10 (MNIST)
-        device (str): Device to create model on ('cpu', 'cuda', etc.)
-        
-    Returns:
-        nn.Module: The model moved to the specified device
-    """
-    if architecture.lower() in ['fc', 'nnet4l']:
-        model = NNet4l(num_classes=num_classes, dropout_prob=0.0)
-    elif architecture.lower() in ['cnn', 'cnnet4l']:
-        model = CNNet4l(num_classes=num_classes, dropout_prob=0.0)
-    else:
-        raise ValueError(f"Unknown PBB architecture: {architecture}. "
-                        f"Use 'fc' (NNet4l) or 'cnn' (CNNet4l)")
-    
-    return model.to(device)
-
-
 def create_dataloaders(dataset_seed):
-    """Create dataset-specific train/test dataloaders."""
-    if DATASET_TYPE == 'mnist':
-        if MNIST_CLASS_MODE == 'binary':
-            return get_mnist_binary_dataloaders_partial_random_labels(
-                classes=MNIST_CLASSES_BINARY,
-                p=USE_RANDOM_LABELS,
-                n_train_per_group=1000,
-                n_test_per_group=5000,
-                batch_size=2000,
-                random_seed=dataset_seed,
-                normalize=True
-            )
-        elif MNIST_CLASS_MODE == 'multiclass':
-            return get_mnist_multiclass_dataloaders_partial_random_labels(
-                classes=MNIST_CLASSES_MULTICLASS,
-                p=USE_RANDOM_LABELS,
-                n_train_per_class=6000,
-                n_test_per_class=1000,
-                batch_size=250,
-                random_seed=dataset_seed,
-                normalize=True
-            )
-        else:
-            raise ValueError(f"Unsupported MNIST_CLASS_MODE: {MNIST_CLASS_MODE}")
+    """Create train/test dataloaders for multiclass MNIST."""
+    if DATASET_TYPE != 'mnist':
+        raise ValueError(f"Unsupported DATASET_TYPE for multiclass mode: {DATASET_TYPE}")
 
-    raise ValueError(f"Unsupported DATASET_TYPE: {DATASET_TYPE}")
+    return get_mnist_multiclass_dataloaders_partial_random_labels(
+        classes=MNIST_CLASSES_MULTICLASS,
+        p=USE_RANDOM_LABELS,
+        n_train_per_class=6000,
+        n_test_per_class=1000,
+        batch_size=250,
+        random_seed=dataset_seed,
+        normalize=True,
+    )
 
 
 def save_seed_stability_summary(seed_results):
@@ -259,6 +83,7 @@ def save_seed_stability_summary(seed_results):
 
     return summary_path
 
+
 def main():
     """Main experiment function."""
     if not SEEDS:
@@ -267,79 +92,52 @@ def main():
     set_global_seed(SEEDS[0])
     print(f"Seed list: {SEEDS}")
 
-    # Automatically select GPU if available, otherwise use CPU
     if torch.cuda.is_available():
         current_gpu = torch.cuda.current_device()
         device = f'cuda:{current_gpu}'
-        print(f"🚀 GPU detected and will be used: {device}")
-        print(f"   GPU Name: {torch.cuda.get_device_name(current_gpu)}")
-        print(f"   GPU Memory: {torch.cuda.get_device_properties(current_gpu).total_memory / 1e9:.1f} GB")
+        print(f"GPU detected and will be used: {device}")
+        print(f"GPU Name: {torch.cuda.get_device_name(current_gpu)}")
+        print(f"GPU Memory: {torch.cuda.get_device_properties(current_gpu).total_memory / 1e9:.1f} GB")
     else:
         device = 'cpu'
-        print(f"⚠️  No GPU detected, using CPU for training")
-        if torch.version.cuda is None:
-            print("   Reason: Installed PyTorch build is CPU-only (torch.version.cuda is None)")
-            print("   Fix: Install a CUDA-enabled PyTorch build in your active environment")
-        else:
-            print(f"   torch.version.cuda: {torch.version.cuda}")
-            print("   Fix: Check CUDA_VISIBLE_DEVICES, driver/runtime compatibility, and permissions")
-    # Define beta values to test
+        print("No GPU detected, using CPU for training")
+
     if TEST_MODE:
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("RUNNING IN TEST MODE")
         print("For full experiment, set TEST_MODE = False")
-        print("="*50)
-
-        if DATASET_TYPE == 'mnist':
-            beta_values = [256, 2000]  # Minimal set for testing
-            a0 = {0: 0.01, 256:0.01, 2000: 0.01}
-
-        elif DATASET_TYPE in ('cifar10', 'cifar100'):
-            beta_values = [128, 250, 500, 1000]  # Minimal set for testing
-            a0 = {0: 0.01, 128: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01}
-
-        elif DATASET_TYPE == 'synth':
-            beta_values = [50]  # Minimal set for testing
-            a0 = {0: 0.01, 50: 0.01}
-        
+        print("=" * 50)
+        beta_values = [256, 2000]
+        a0 = {0: 0.01, 256: 0.01, 2000: 0.01}
     else:
-        if DATASET_TYPE == 'mnist':
-            # New beta values for whole MNIST experiment
-            beta_values = [500, 1000, 2000, 4000, 8000, 16000, 30000, 60000, 120000, 600000]
-            a0 = {0:0.01, 500:0.01, 1000:0.01, 2000:0.01, 4000:0.01, 8000:0.01, 16000:0.01, 30000:0.01, 60000:0.01, 120000:0.01, 600000:0.01}
-            
-    print(f"\n{'='*70}")
-    print(f"Gibbs Generalization EXPERIMENTS")
+        beta_values = [500, 1000, 2000, 4000, 8000, 16000, 30000, 60000, 120000, 600000]
+        a0 = {
+            0: 0.01,
+            500: 0.01,
+            1000: 0.01,
+            2000: 0.01,
+            4000: 0.01,
+            8000: 0.01,
+            16000: 0.01,
+            30000: 0.01,
+            60000: 0.01,
+            120000: 0.01,
+            600000: 0.01,
+        }
+
+    print(f"\n{'=' * 70}")
+    print("Gibbs Generalization EXPERIMENTS (MULTICLASS)")
     print(f"Dataset: {DATASET_TYPE.upper()}")
+    print(f"Classes: {MNIST_CLASSES_MULTICLASS}")
     print(f"Beta values: {beta_values}")
-    print(f"Preset: {EXPERIMENT_PRESET if EXPERIMENT_PRESET is not None else 'manual'}")
-    print(f"Loss: {LOSS_FUNCTION}, Initialize PBB prior: {INITIALIZE_PBB_WITH_PRIOR}, MAX_ITER: {MAX_ITER}")
-    if str(LOSS_FUNCTION).lower().strip() == 'nll':
-        print(f"p_min (bounded NLL): {PBB_PMIN}")
-    print(f"Stopping mode: {STOPPING_MODE}")
-    print(f"{'='*70}")
-
-    layerwise_mode_to_use = str(LAYERWISE_SGLD_PRIOR_DECAY_MODE).lower()
-    if layerwise_mode_to_use not in {'off', 'adaptive', 'on'}:
-        raise ValueError("LAYERWISE_SGLD_PRIOR_DECAY_MODE must be one of: 'off', 'adaptive', 'on'")
-
-    if ASK_BEFORE_LAYERWISE_SGLD and layerwise_mode_to_use != 'off':
-        if sys.stdin.isatty():
-            print("\nLayer-wise SGLD prior decay is requested.")
-            print(f"Requested mode: {layerwise_mode_to_use}")
-            if layerwise_mode_to_use == 'adaptive':
-                print(f"Adaptive max weight_decay cap: {LAYERWISE_SGLD_MAX_WEIGHT_DECAY}")
-            answer = input("Enable this setting for this run? [y/N]: ").strip().lower()
-            if answer not in {'y', 'yes'}:
-                layerwise_mode_to_use = 'off'
-                print("Layer-wise SGLD prior decay disabled for this run.")
-        else:
-            print("No interactive TTY detected; using configured layer-wise SGLD prior decay mode.")
+    print(f"Loss: {LOSS_FUNCTION}, MAX_ITER: {MAX_ITER}, stopping: {STOPPING_MODE}")
+    print(f"{'=' * 70}")
 
     seed_results = []
 
     for seed in SEEDS:
-        dataset_seed = DATASET_SEED
+        dataset_seed = DATASET_SEED if USE_SAME_DATASET_ACROSS_SEEDS else seed
+
         print("\n" + "-" * 70)
         print(f"Running seed {seed} (dataset_seed={dataset_seed})")
         print("-" * 70)
@@ -349,70 +147,36 @@ def main():
         print("\nCreating dataset and dataloaders...")
         train_loader, test_loader = create_dataloaders(dataset_seed)
 
-        if DATASET_TYPE == 'mnist':
-            selected_classes = MNIST_CLASSES_BINARY if MNIST_CLASS_MODE == 'binary' else MNIST_CLASSES_MULTICLASS
-
-        else:
-            selected_classes = None
-
-        experiment_loss = LOSS_FUNCTION.lower().strip()
-        if experiment_loss not in {'bbce', 'savage', 'nll', 'ce'}:
-            raise ValueError("LOSS_FUNCTION must be one of: 'bbce', 'savage', 'nll', 'ce'")
-        if experiment_loss == 'nll':
-            print(f"Using bounded NLL with p_min={PBB_PMIN}")
-
-        stopping_mode = str(STOPPING_MODE).lower().strip()
-        if stopping_mode not in {'ema', 'max_iter_only'}:
-            raise ValueError("STOPPING_MODE must be one of: 'ema', 'max_iter_only'")
-        if stopping_mode == 'max_iter_only' and (MAX_ITER is None or MAX_ITER <= 0):
-            raise ValueError("For STOPPING_MODE='max_iter_only', set MAX_ITER to a positive integer")
-
-        if stopping_mode == 'max_iter_only':
-            print(f"Stopping policy: max-iter-only (MAX_ITER={MAX_ITER} per beta)")
-        elif MAX_ITER is None:
-            print("Stopping policy: convergence-only (MAX_ITER=None, binary-style)")
-        else:
-            print(f"Stopping policy: hard cap MAX_ITER={MAX_ITER} per beta")
-
         csv_paths = run_beta_experiments(
-            loss=experiment_loss,
+            loss=LOSS_FUNCTION,
             beta_values=beta_values,
-            a0=a0,  # Now supports dict, callable, or float
-            b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
+            a0=a0,
+            b=0.5,
             sigma_gauss_prior=SGLD_SIGMA_GAUSS_PRIOR,
             device=device,
-            n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-            width=500, # Width of each hidden layer, only for fully connected networks
-            dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
+            n_hidden_layers=3,
+            width=600,
+            dataset_type=DATASET_TYPE,
             use_random_labels=USE_RANDOM_LABELS,
             l_max=4.0,
             train_loader=train_loader,
             test_loader=test_loader,
-            min_steps=2000,  # Minimum steps for subsequent betas (or all betas if not annealing)
+            min_steps=2000,
             alpha_average=0.01,
             alpha_stop=0.00025,
-            eta=36,  # This is used only if you want to schedule the step size (In the current version it is not used)
+            eta=36,
             eps=-1e-7,
             test_mode=TEST_MODE,
             add_grad_norm=True,
-            add_noise=True,  # If False, it becomes (S)GD
-            sgld_num=1,  # Choose SGLD variant: 1 or 2
-            annealed=False,  # Whether to use annealed SGLD
-            min_steps_first_beta=4000,  # For annealing: min steps for first beta>0 (ignored if annealed=False)
+            add_noise=True,
+            sgld_num=1,
+            annealed=False,
+            min_steps_first_beta=4000,
             seed=seed,
-            selected_classes=selected_classes,
-            # PBB Configuration (optional - only used if USE_PBB_CONFIG=True)
-            use_pbb_models=USE_PBB_CONFIG,
-            pbb_architecture=PBB_ARCHITECTURE if USE_PBB_CONFIG else None,
-            prior_type=PBB_PRIOR_DIST if (USE_PBB_CONFIG and INITIALIZE_PBB_WITH_PRIOR) else None,
-            sigma_prior=PBB_SIGMA_PRIOR if (USE_PBB_CONFIG and INITIALIZE_PBB_WITH_PRIOR) else None,
-            initialize_pbb_with_prior=INITIALIZE_PBB_WITH_PRIOR,
-            pmin=PBB_PMIN if experiment_loss == 'nll' else None,
+            selected_classes=MNIST_CLASSES_MULTICLASS,
             max_epochs=MAX_ITER,
-            stopping_mode=stopping_mode,
-            resume_from_checkpoint=False,  # Keep behavior consistent with main.py: always run from scratch
-            layerwise_sgld_prior_decay_mode=layerwise_mode_to_use,
-            max_layerwise_weight_decay=LAYERWISE_SGLD_MAX_WEIGHT_DECAY,
+            stopping_mode=STOPPING_MODE,
+            resume_from_checkpoint=False,
         )
 
         seed_results.append({
@@ -424,9 +188,10 @@ def main():
     summary_path = save_seed_stability_summary(seed_results)
     if summary_path is not None:
         print(f"\nSeed stability summary saved to: {summary_path}")
-    
-    print(f"\n{'='*70}")
+
+    print(f"\n{'=' * 70}")
     print("EXPERIMENT COMPLETED!")
+
 
 if __name__ == "__main__":
     main()
