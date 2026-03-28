@@ -267,6 +267,7 @@ def train_sgld_model(
     epoch_lr_decrement=0.01,
     epoch_lr_step_epochs=100,
     epoch_lr_min=1e-4,
+    sampling_epochs=100,
 ):
     """Train one model for one beta using SGLD."""
     if isinstance(device, str):
@@ -471,6 +472,62 @@ def train_sgld_model(
                 f"Elapsed={elapsed:.1f}s"
             )
 
+    # Sampling phase: fixed epochs after training completes
+    print(f"\nRunning sampling phase ({sampling_epochs} epochs)...")
+    for sampling_epoch in range(sampling_epochs):
+        model.train()
+        train_loss_total = 0.0
+        train_zero_one_total = 0.0
+
+        for batch_x, batch_y in train_loader:
+            batch_x = batch_x.to(device, non_blocking=True)
+            batch_y = _to_class_indices(batch_y.to(device, non_blocking=True))
+
+            with torch.no_grad():
+                outputs = model(batch_x)
+                loss_fn = criterion(outputs.squeeze(), batch_y)
+                zero_one_loss = zero_one_criterion(outputs, batch_y)
+
+                bce_val = loss_fn.item()
+                zero_one_val = zero_one_loss.item()
+                avg_train_BCE_losses.append(bce_val)
+                avg_train_BCE_losses_sq.append(bce_val ** 2)
+                avg_train_zero_one_losses.append(zero_one_val)
+                train_loss_total += bce_val
+                train_zero_one_total += zero_one_val
+
+        avg_train_loss = train_loss_total / len(train_loader)
+        avg_train_zero_one = train_zero_one_total / len(train_loader)
+
+        model.eval()
+        test_loss_total = 0.0
+        test_zero_one_total = 0.0
+
+        with torch.no_grad():
+            for batch_x, batch_y in test_loader:
+                batch_x = batch_x.to(device, non_blocking=True)
+                batch_y = _to_class_indices(batch_y.to(device, non_blocking=True))
+
+                outputs = model(batch_x)
+                loss_fn = criterion(outputs.squeeze(), batch_y)
+                zero_one_loss = zero_one_criterion(outputs, batch_y)
+
+                test_loss_item = loss_fn.item()
+                test_zero_one_item = zero_one_loss.item()
+                avg_test_BCE_losses.append(test_loss_item)
+                avg_test_BCE_losses_sq.append(test_loss_item ** 2)
+                avg_test_zero_one_losses.append(test_zero_one_item)
+                test_loss_total += test_loss_item
+                test_zero_one_total += test_zero_one_item
+
+        avg_test_loss = test_loss_total / len(test_loader)
+        avg_test_zero_one = test_zero_one_total / len(test_loader)
+
+        if (sampling_epoch + 1) % 10 == 0 or sampling_epoch == 0:
+            print(f"  Sampling Epoch {sampling_epoch+1:>3}/{sampling_epochs} | "
+                  f"Train Loss={avg_train_loss:.4f} Test Loss={avg_test_loss:.4f} | "
+                  f"Train 0-1={avg_train_zero_one:.4f} Test 0-1={avg_test_zero_one:.4f}")
+
     return (
         train_losses,
         test_losses,
@@ -487,7 +544,6 @@ def train_sgld_model(
         avg_grad_norm,
         epoch,
     )
-
 
 def save_checkpoint(
     checkpoint_dir,
@@ -584,6 +640,7 @@ def run_beta_experiments(
     epoch_lr_decrement=0.01,
     epoch_lr_step_epochs=100,
     epoch_lr_min=1e-4,
+    sampling_epochs=100,
 ):
     """Run multiclass SGLD experiments across beta values."""
     if sgld_num != 1 or annealed:
@@ -735,6 +792,7 @@ def run_beta_experiments(
             epoch_lr_decrement=epoch_lr_decrement,
             epoch_lr_step_epochs=epoch_lr_step_epochs,
             epoch_lr_min=epoch_lr_min,
+            sampling_epochs=sampling_epochs,
         )
 
         (

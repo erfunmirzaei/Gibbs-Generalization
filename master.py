@@ -5,6 +5,7 @@ This script mirrors the structure of main.py but runs MNIST multi-class experime
 """
 
 import csv
+import os
 import random
 from datetime import datetime
 
@@ -16,7 +17,7 @@ from training_multiclass import run_beta_experiments
 
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
-USE_RANDOM_LABELS = 1  # Probability of randomizing each label in [0, 1]
+USE_RANDOM_LABELS = 1  # Default probability of randomizing each label in [0, 1]
 DATASET_TYPE = 'mnist'  # Multiclass path currently supports MNIST
 SEEDS = [42]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization
@@ -30,7 +31,7 @@ LOSS_FUNCTION = 'bbce'  # 'ce', 'bbce', 'savage', 'nll'
 SGLD_SIGMA_GAUSS_PRIOR = 5.0
 MAX_ITER = 1000
 STOPPING_MODE = 'max_iter_only'  # 'ema' or 'max_iter_only'
-
+SAMPLING_EPOCHS = 100  # Number of fixed epochs for sampling phase
 # Epoch learning-rate schedule:
 # Epochs 1-100: 0.05, 101-200: 0.04, 201-300: 0.03, ...
 USE_EPOCH_LR_SCHEDULE = True
@@ -52,14 +53,14 @@ def set_global_seed(seed):
     torch.backends.cudnn.benchmark = False
 
 
-def create_dataloaders(dataset_seed):
+def create_dataloaders(dataset_seed, use_random_labels):
     """Create train/test dataloaders for multiclass MNIST."""
     if DATASET_TYPE != 'mnist':
         raise ValueError(f"Unsupported DATASET_TYPE for multiclass mode: {DATASET_TYPE}")
 
     return get_mnist_multiclass_dataloaders_partial_random_labels(
         classes=MNIST_CLASSES_MULTICLASS,
-        p=USE_RANDOM_LABELS,
+        p=use_random_labels,
         n_train_per_class=6000,
         n_test_per_class=1000,
         batch_size=250,
@@ -97,8 +98,13 @@ def main():
     if not SEEDS:
         raise ValueError("SEEDS must contain at least one seed value")
 
+    use_random_labels = float(os.getenv("USE_RANDOM_LABELS", str(USE_RANDOM_LABELS)))
+    if not (0.0 <= use_random_labels <= 1.0):
+        raise ValueError("USE_RANDOM_LABELS must be in [0, 1]")
+
     set_global_seed(SEEDS[0])
     print(f"Seed list: {SEEDS}")
+    print(f"USE_RANDOM_LABELS: {use_random_labels}")
 
     if torch.cuda.is_available():
         current_gpu = torch.cuda.current_device()
@@ -160,7 +166,7 @@ def main():
         set_global_seed(seed)
 
         print("\nCreating dataset and dataloaders...")
-        train_loader, test_loader = create_dataloaders(dataset_seed)
+        train_loader, test_loader = create_dataloaders(dataset_seed, use_random_labels)
 
         csv_paths = run_beta_experiments(
             loss=LOSS_FUNCTION,
@@ -172,7 +178,7 @@ def main():
             n_hidden_layers=3,
             width=600,
             dataset_type=DATASET_TYPE,
-            use_random_labels=USE_RANDOM_LABELS,
+            use_random_labels=use_random_labels,
             l_max=4.0,
             train_loader=train_loader,
             test_loader=test_loader,
@@ -197,6 +203,7 @@ def main():
             epoch_lr_decrement=EPOCH_LR_DECREMENT,
             epoch_lr_step_epochs=EPOCH_LR_STEP_EPOCHS,
             epoch_lr_min=EPOCH_LR_MIN,
+            sampling_epochs=SAMPLING_EPOCHS,
         )
 
         seed_results.append({
