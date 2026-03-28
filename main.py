@@ -20,8 +20,8 @@ from training import run_beta_experiments
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
-DATASET_TYPE = 'mnist'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
-SEEDS = [42, 52, 62, 72, 82]  # Random seeds for stability analysis
+DATASET_TYPE = 'cifar10'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
+SEEDS = [42, 52]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
@@ -221,8 +221,8 @@ def main():
             b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
             sigma_gauss_prior=5.0,
             device=device,
-            n_hidden_layers=1,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-            width=500, # Width of each hidden layer, only for fully connected networks
+            n_hidden_layers=2,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
+            width=1000, # Width of each hidden layer, only for fully connected networks
             dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
             use_random_labels=USE_RANDOM_LABELS,
             l_max=4.0,
