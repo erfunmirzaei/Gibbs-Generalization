@@ -128,6 +128,25 @@ def get_a0_for_beta(beta, a0):
     raise ValueError(f"a0 must be int, float, dict, or callable, got {type(a0)}")
 
 
+def resolve_epoch_lr(epoch_index, base_lr, use_schedule, schedule_start, schedule_decrement, schedule_step_epochs, schedule_min):
+    """Resolve learning rate for the given 0-based epoch index.
+
+    When scheduling is enabled, use piecewise-constant decay:
+    - Epochs 1..schedule_step_epochs: schedule_start
+    - Next schedule_step_epochs: schedule_start - schedule_decrement
+    - and so on, clipped at schedule_min.
+    """
+    if not use_schedule:
+        return float(base_lr)
+
+    if schedule_step_epochs <= 0:
+        raise ValueError("epoch_lr_step_epochs must be a positive integer")
+
+    block_idx = int(epoch_index // schedule_step_epochs)
+    scheduled_lr = float(schedule_start) - float(schedule_decrement) * block_idx
+    return max(float(schedule_min), scheduled_lr)
+
+
 def _to_class_indices(targets, num_classes_hint=None):
     """Convert targets to class indices when one-hot labels are provided."""
     if targets.ndim > 1:
@@ -146,16 +165,6 @@ def _predict_from_outputs(outputs):
     if logits.ndim == 2 and logits.size(1) == 1:
         return (logits.squeeze(1) > 0).long()
     return torch.argmax(logits, dim=1)
-
-
-def _count_correct_predictions(predicted, targets):
-    """Count correct predictions for class-index or one-hot targets."""
-    if targets.ndim > 1:
-        if targets.size(-1) == 1:
-            targets = targets.squeeze(-1)
-        else:
-            targets = torch.argmax(targets, dim=1)
-    return (predicted == targets).sum().item()
 
 
 def _bootstrap_ema_train_losses(model, train_loader, criterion, device):
@@ -253,6 +262,11 @@ def train_sgld_model(
     add_noise=True,
     max_epochs=None,
     stopping_mode='ema',
+    use_epoch_lr_schedule=False,
+    epoch_lr_start=0.05,
+    epoch_lr_decrement=0.01,
+    epoch_lr_step_epochs=100,
+    epoch_lr_min=1e-4,
 ):
     """Train one model for one beta using SGLD."""
     if isinstance(device, str):
@@ -264,16 +278,25 @@ def train_sgld_model(
 
     zero_one_criterion = ZeroOneLoss()
 
+    initial_lr = resolve_epoch_lr(
+        epoch_index=0,
+        base_lr=a0,
+        use_schedule=use_epoch_lr_schedule,
+        schedule_start=epoch_lr_start,
+        schedule_decrement=epoch_lr_decrement,
+        schedule_step_epochs=epoch_lr_step_epochs,
+        schedule_min=epoch_lr_min,
+    )
+
     optimizer = SGLD(
         model.parameters(),
-        lr=a0,
+        lr=initial_lr,
         sigma_gauss_prior=sigma_gauss_prior,
         beta=beta,
         add_noise=add_noise,
     )
 
     train_losses, test_losses = [], []
-    train_accuracies, test_accuracies = [], []
     train_zero_one_losses, test_zero_one_losses = [], []
     learning_rates = []
 
@@ -287,6 +310,12 @@ def train_sgld_model(
     p_grad_norm = 2
 
     print(f"Training with SGLD: a0={a0}, b={b}, sigma_gauss_prior={sigma_gauss_prior}, beta={beta}")
+    if use_epoch_lr_schedule:
+        print(
+            "Epoch LR schedule enabled: "
+            f"start={epoch_lr_start}, decrement={epoch_lr_decrement} every {epoch_lr_step_epochs} epochs, "
+            f"min={epoch_lr_min}"
+        )
     print(f"Dataset type: {dataset_type}, Device: {device}")
 
     stopping_mode = str(stopping_mode).lower().strip()
@@ -354,11 +383,21 @@ def train_sgld_model(
                 print(f"Reached maximum epochs limit: {max_epochs}. Stopping training.")
                 break
 
+        current_epoch_lr = resolve_epoch_lr(
+            epoch_index=epoch,
+            base_lr=a0,
+            use_schedule=use_epoch_lr_schedule,
+            schedule_start=epoch_lr_start,
+            schedule_decrement=epoch_lr_decrement,
+            schedule_step_epochs=epoch_lr_step_epochs,
+            schedule_min=epoch_lr_min,
+        )
+        for param_group in optimizer.param_groups:
+            param_group['lr'] = current_epoch_lr
+
         model.train()
         train_loss_total = 0.0
         train_zero_one_total = 0.0
-        train_correct = 0
-        train_total = 0
 
         for batch_x, batch_y in train_loader:
             batch_x = batch_x.to(device, non_blocking=True)
@@ -377,26 +416,24 @@ def train_sgld_model(
             EMA_train_losses.append((EMA_alpha / 2) * prev_loss + (EMA_alpha / 2) * loss_fn.item() + (1 - EMA_alpha) * EMA_train_losses[-1])
 
             bce_val = loss_fn.item()
+            zero_one_val = zero_one_loss.item()
+            avg_train_BCE_losses.append(bce_val)
+            avg_train_BCE_losses_sq.append(bce_val ** 2)
+            avg_train_zero_one_losses.append(zero_one_val)
             train_loss_total += bce_val
-            train_zero_one_total += zero_one_loss.item()
-            train_total += batch_y.size(0)
-            train_correct += _count_correct_predictions(predicted, batch_y)
+            train_zero_one_total += zero_one_val
 
         learning_rates.append(optimizer.param_groups[0]['lr'])
 
         avg_train_loss = train_loss_total / len(train_loader)
         avg_train_zero_one = train_zero_one_total / len(train_loader)
-        train_accuracy = 100 * train_correct / train_total
 
         train_losses.append(avg_train_loss)
         train_zero_one_losses.append(avg_train_zero_one)
-        train_accuracies.append(train_accuracy)
 
         model.eval()
         test_loss_total = 0.0
         test_zero_one_total = 0.0
-        test_correct = 0
-        test_total = 0
 
         with torch.no_grad():
             for batch_x, batch_y in test_loader:
@@ -408,25 +445,19 @@ def train_sgld_model(
                 predicted = _predict_from_outputs(outputs)
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
 
-                test_loss_total += loss_fn.item()
-                test_zero_one_total += zero_one_loss.item()
-                test_total += batch_y.size(0)
-                test_correct += _count_correct_predictions(predicted, batch_y)
+                test_loss_item = loss_fn.item()
+                test_zero_one_item = zero_one_loss.item()
+                avg_test_BCE_losses.append(test_loss_item)
+                avg_test_BCE_losses_sq.append(test_loss_item ** 2)
+                avg_test_zero_one_losses.append(test_zero_one_item)
+                test_loss_total += test_loss_item
+                test_zero_one_total += test_zero_one_item
 
         avg_test_loss = test_loss_total / len(test_loader)
         avg_test_zero_one = test_zero_one_total / len(test_loader)
-        test_accuracy = 100 * test_correct / test_total
 
         test_losses.append(avg_test_loss)
         test_zero_one_losses.append(avg_test_zero_one)
-        test_accuracies.append(test_accuracy)
-
-        avg_train_BCE_losses.append(avg_train_loss)
-        avg_test_BCE_losses.append(avg_test_loss)
-        avg_train_zero_one_losses.append(avg_train_zero_one)
-        avg_test_zero_one_losses.append(avg_test_zero_one)
-        avg_train_BCE_losses_sq.append(avg_train_loss ** 2)
-        avg_test_BCE_losses_sq.append(avg_test_loss ** 2)
 
         epoch += 1
 
@@ -434,17 +465,15 @@ def train_sgld_model(
             elapsed = time.time() - start_time
             print(
                 f"Epoch {epoch:>5} | Beta={beta} | "
+                f"LR={optimizer.param_groups[0]['lr']:.5f} | "
                 f"Train Loss={avg_train_loss:.4f} Test Loss={avg_test_loss:.4f} | "
                 f"Train 0-1={avg_train_zero_one:.4f} Test 0-1={avg_test_zero_one:.4f} | "
-                f"Train Acc={train_accuracy:.2f}% Test Acc={test_accuracy:.2f}% | "
                 f"Elapsed={elapsed:.1f}s"
             )
 
     return (
         train_losses,
         test_losses,
-        train_accuracies,
-        test_accuracies,
         train_zero_one_losses,
         test_zero_one_losses,
         learning_rates,
@@ -550,6 +579,11 @@ def run_beta_experiments(
     resume_from_checkpoint=True,
     max_epochs=None,
     stopping_mode='ema',
+    use_epoch_lr_schedule=False,
+    epoch_lr_start=0.05,
+    epoch_lr_decrement=0.01,
+    epoch_lr_step_epochs=100,
+    epoch_lr_min=1e-4,
 ):
     """Run multiclass SGLD experiments across beta values."""
     if sgld_num != 1 or annealed:
@@ -640,6 +674,11 @@ def run_beta_experiments(
         'sigma_gauss_prior': sigma_gauss_prior,
         'max_epochs': max_epochs,
         'stopping_mode': stopping_mode,
+        'use_epoch_lr_schedule': use_epoch_lr_schedule,
+        'epoch_lr_start': epoch_lr_start,
+        'epoch_lr_decrement': epoch_lr_decrement,
+        'epoch_lr_step_epochs': epoch_lr_step_epochs,
+        'epoch_lr_min': epoch_lr_min,
     }
 
     betas_experimented = []
@@ -691,13 +730,16 @@ def run_beta_experiments(
             add_noise=add_noise,
             max_epochs=max_epochs,
             stopping_mode=stopping_mode,
+            use_epoch_lr_schedule=use_epoch_lr_schedule,
+            epoch_lr_start=epoch_lr_start,
+            epoch_lr_decrement=epoch_lr_decrement,
+            epoch_lr_step_epochs=epoch_lr_step_epochs,
+            epoch_lr_min=epoch_lr_min,
         )
 
         (
             train_losses,
             test_losses,
-            _,
-            _,
             train_01_losses,
             test_01_losses,
             _,
@@ -787,6 +829,11 @@ def run_beta_experiments(
             f"  - Number of batches: {len(train_loader)}\n"
             f"  - Beta values: {sorted(betas_experimented)}\n"
             f"  - Learning rate (a0): {current_a0}\n"
+            f"  - Epoch LR schedule enabled: {use_epoch_lr_schedule}\n"
+            f"  - Epoch LR schedule start: {epoch_lr_start}\n"
+            f"  - Epoch LR schedule decrement: {epoch_lr_decrement}\n"
+            f"  - Epoch LR schedule step epochs: {epoch_lr_step_epochs}\n"
+            f"  - Epoch LR schedule min: {epoch_lr_min}\n"
             f"  - Learning rate decay (b): {b}\n"
             f"  - Gaussian prior sigma: {sigma_gauss_prior}\n"
             f"  - alpha_average: {alpha_average}\n"

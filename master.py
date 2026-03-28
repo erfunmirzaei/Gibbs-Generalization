@@ -26,10 +26,18 @@ USE_SAME_DATASET_ACROSS_SEEDS = True
 MNIST_CLASSES_MULTICLASS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
 
 # Experiment-level controls
-LOSS_FUNCTION = 'ce'  # 'ce', 'bbce', 'savage', 'nll'
+LOSS_FUNCTION = 'bbce'  # 'ce', 'bbce', 'savage', 'nll'
 SGLD_SIGMA_GAUSS_PRIOR = 5.0
-MAX_ITER = 500
+MAX_ITER = 1000
 STOPPING_MODE = 'max_iter_only'  # 'ema' or 'max_iter_only'
+
+# Epoch learning-rate schedule:
+# Epochs 1-100: 0.05, 101-200: 0.04, 201-300: 0.03, ...
+USE_EPOCH_LR_SCHEDULE = True
+EPOCH_LR_START = 0.05
+EPOCH_LR_DECREMENT = 0.001
+EPOCH_LR_STEP_EPOCHS = 15
+EPOCH_LR_MIN = 1e-3
 
 
 def set_global_seed(seed):
@@ -107,12 +115,13 @@ def main():
         print("RUNNING IN TEST MODE")
         print("For full experiment, set TEST_MODE = False")
         print("=" * 50)
-        beta_values = [256, 2000]
-        a0 = {0: 0.01, 256: 0.01, 2000: 0.01}
+        beta_values = [600000]
+        a0 = {0: 0.01, 600000: 0.01}
     else:
-        beta_values = [500, 1000, 2000, 4000, 8000, 16000, 30000, 60000, 120000, 600000]
+        beta_values = [250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 60000, 120000, 600000]
         a0 = {
             0: 0.01,
+            250: 0.01,
             500: 0.01,
             1000: 0.01,
             2000: 0.01,
@@ -131,6 +140,12 @@ def main():
     print(f"Classes: {MNIST_CLASSES_MULTICLASS}")
     print(f"Beta values: {beta_values}")
     print(f"Loss: {LOSS_FUNCTION}, MAX_ITER: {MAX_ITER}, stopping: {STOPPING_MODE}")
+    if USE_EPOCH_LR_SCHEDULE:
+        print(
+            "Epoch LR schedule: "
+            f"start={EPOCH_LR_START}, decrement={EPOCH_LR_DECREMENT} every {EPOCH_LR_STEP_EPOCHS} epochs, "
+            f"min={EPOCH_LR_MIN}"
+        )
     print(f"{'=' * 70}")
 
     seed_results = []
@@ -177,6 +192,11 @@ def main():
             max_epochs=MAX_ITER,
             stopping_mode=STOPPING_MODE,
             resume_from_checkpoint=False,
+            use_epoch_lr_schedule=USE_EPOCH_LR_SCHEDULE,
+            epoch_lr_start=EPOCH_LR_START,
+            epoch_lr_decrement=EPOCH_LR_DECREMENT,
+            epoch_lr_step_epochs=EPOCH_LR_STEP_EPOCHS,
+            epoch_lr_min=EPOCH_LR_MIN,
         )
 
         seed_results.append({
