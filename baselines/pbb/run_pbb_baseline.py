@@ -15,12 +15,19 @@ from __future__ import annotations
 import csv
 import os
 import random
+import sys
 from datetime import datetime
 from typing import Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
+
+# Allow running this script from any cwd (e.g., baselines/pbb/) by ensuring
+# repository-root modules like dataset.py are importable.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from dataset import (
     get_cifar10_binary_dataloaders_partial_random_labels,

@@ -14,13 +14,21 @@ from __future__ import annotations
 import csv
 import os
 import random
+import subprocess
+import sys
 from datetime import datetime
-from typing import Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+# Allow running this script from any cwd (e.g., baselines/pbb/) by ensuring
+# repository-root modules like dataset.py are importable.
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 from dataset import (
     get_cifar10_binary_dataloaders_partial_random_labels,
@@ -45,7 +53,9 @@ SEEDS = [42]
 DATASET_SEED = 42
 
 DATASET_TYPE = "mnist"  # 'mnist' | 'cifar10' | 'cifar100' | 'synth'
-USE_RANDOM_LABELS = 1
+# Label randomization probability p used by *_partial_random_labels loaders.
+# p=0.0 => clean labels, p=1.0 => fully random labels (near-chance training).
+USE_RANDOM_LABELS = 0.0
 MNIST_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]] 
 CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]
 CIFAR100_CLASSES = [55, 88]
@@ -64,6 +74,36 @@ SIGMA_GAUSS_PRIOR_FOR_OPT = 5.0
 BETA_VALUES = [16000]
 A0_BY_BETA = {16000: 0.01}
 MAX_EPOCHS = 500 if not TEST_MODE else 5
+
+# Progress logging during training (set to 0 to disable per-epoch logging).
+LOG_EVERY_EPOCHS = 50
+
+# Optional: automatically compute PBB bounds for the generated CSV at the end.
+# This keeps the main workflow unchanged and only augments PBB outputs when enabled.
+AUTO_COMPUTE_BOUNDS = True
+BOUND_DELTA = 0.05
+BOUND_MC_SAMPLES = 1000
+BOUND_APPEND_TO_TRUE_CSV = True
+BOUND_KL_VALUE: Optional[float] = None
+BOUND_KL_CSV: Optional[str] = None
+BOUND_KL_COLUMN: Optional[str] = None
+
+
+def _param_l2_norm(model: nn.Module) -> float:
+    s = 0.0
+    with torch.no_grad():
+        for p in model.parameters():
+            s += float((p.detach() ** 2).sum().item())
+    return float(s ** 0.5)
+
+
+def _param_l2_delta_from(model: nn.Module, ref_params) -> float:
+    s = 0.0
+    with torch.no_grad():
+        for p, r in zip(model.parameters(), ref_params):
+            d = p.detach() - r
+            s += float((d ** 2).sum().item())
+    return float(s ** 0.5)
 
 
 class BinaryToTwoClassLogProb(nn.Module):
@@ -214,8 +254,19 @@ def run_for_beta(beta: int, seed: int, train_loader, test_loader, device: torch.
         beta=float(beta),
         add_noise=False,
     )
+    ref_params = [p.detach().clone() for p in wrapped.parameters()]
 
-    for _ in range(MAX_EPOCHS):
+    # Show starting metrics so training progress is explicit.
+    init_train_loss, init_train_err = evaluate(wrapped, train_loader, criterion, device)
+    init_test_loss, init_test_err = evaluate(wrapped, test_loader, criterion, device)
+    print(
+        f"seed={seed} beta={beta} epoch=0/{MAX_EPOCHS} "
+        f"train_loss={init_train_loss:.6f} test_loss={init_test_loss:.6f} "
+        f"train_0_1={init_train_err:.6f} test_0_1={init_test_err:.6f} "
+        f"param_l2={_param_l2_norm(wrapped):.6f} param_delta_l2=0.000000"
+    )
+
+    for epoch in range(MAX_EPOCHS):
         wrapped.train()
         for x, y in train_loader:
             x = x.to(device, non_blocking=True)
@@ -225,6 +276,23 @@ def run_for_beta(beta: int, seed: int, train_loader, test_loader, device: torch.
             loss = criterion(log_probs, y)
             loss.backward()
             optimizer.step()
+
+        if LOG_EVERY_EPOCHS > 0 and (((epoch + 1) % LOG_EVERY_EPOCHS == 0) or (epoch + 1 == MAX_EPOCHS)):
+            tr_l, tr_e = evaluate(wrapped, train_loader, criterion, device)
+            te_l, te_e = evaluate(wrapped, test_loader, criterion, device)
+            d_tr_l = tr_l - init_train_loss
+            d_te_l = te_l - init_test_loss
+            d_tr_e = tr_e - init_train_err
+            d_te_e = te_e - init_test_err
+            print(
+                f"seed={seed} beta={beta} epoch={epoch + 1}/{MAX_EPOCHS} "
+                f"train_loss={tr_l:.6f} test_loss={te_l:.6f} "
+                f"train_0_1={tr_e:.6f} test_0_1={te_e:.6f} "
+                f"d_train_loss={d_tr_l:+.6e} d_test_loss={d_te_l:+.6e} "
+                f"d_train_0_1={d_tr_e:+.6e} d_test_0_1={d_te_e:+.6e} "
+                f"param_l2={_param_l2_norm(wrapped):.6f} "
+                f"param_delta_l2={_param_l2_delta_from(wrapped, ref_params):.6f}"
+            )
 
     train_loss, train_err = evaluate(wrapped, train_loader, criterion, device)
     test_loss, test_err = evaluate(wrapped, test_loader, criterion, device)
@@ -242,6 +310,46 @@ def save_results(rows):
     return file_path
 
 
+def maybe_compute_bounds(out_csv: str, sample_size: int) -> None:
+    if not AUTO_COMPUTE_BOUNDS:
+        print("Auto bounds: disabled (set AUTO_COMPUTE_BOUNDS=True to enable).")
+        return
+
+    if BOUND_KL_CSV is None and BOUND_KL_VALUE is None:
+        print(
+            "Auto bounds skipped: provide BOUND_KL_CSV or BOUND_KL_VALUE "
+            "to compute official PBB bounds."
+        )
+        return
+
+    bounds_script = os.path.join(REPO_ROOT, "baselines", "pbb", "compute_test_error_bounds_from_csv.py")
+    cmd = [
+        sys.executable,
+        bounds_script,
+        "--true-csv",
+        out_csv,
+        "--sample-size",
+        str(int(sample_size)),
+        "--delta",
+        str(BOUND_DELTA),
+        "--mc-samples",
+        str(int(BOUND_MC_SAMPLES)),
+    ]
+
+    if BOUND_KL_CSV is not None:
+        cmd += ["--kl-csv", BOUND_KL_CSV]
+    if BOUND_KL_COLUMN is not None:
+        cmd += ["--kl-column", BOUND_KL_COLUMN]
+    if BOUND_KL_VALUE is not None:
+        cmd += ["--kl-value", str(BOUND_KL_VALUE)]
+    if BOUND_APPEND_TO_TRUE_CSV:
+        cmd += ["--append-to-true-csv"]
+
+    print("Running bounds command:")
+    print(" ".join(cmd))
+    subprocess.run(cmd, check=True)
+
+
 def main() -> None:
     if torch.cuda.is_available():
         device = torch.device(f"cuda:{torch.cuda.current_device()}")
@@ -251,7 +359,9 @@ def main() -> None:
     print("=" * 80)
     print("PBB BASELINE WITH OUR ARCHITECTURE (NON-LANGEVIN)")
     print(f"Dataset: {DATASET_TYPE}")
+    print(f"Label randomization p: {USE_RANDOM_LABELS}")
     print(f"Betas: {BETA_VALUES}")
+    print("Optimizer: SGLD(add_noise=False), Loss: PBBBoundedNLLLoss")
     print(f"Prior: {PBB_PRIOR_TYPE}, sigma={PBB_SIGMA_PRIOR}")
     print(f"Max epochs: {MAX_EPOCHS}")
     print(f"Device: {device}")
@@ -272,6 +382,8 @@ def main() -> None:
 
     out_csv = save_results(rows)
     print(f"Saved results to: {out_csv}")
+    sample_size = len(train_loader.dataset)
+    maybe_compute_bounds(out_csv=out_csv, sample_size=sample_size)
 
 
 if __name__ == "__main__":
