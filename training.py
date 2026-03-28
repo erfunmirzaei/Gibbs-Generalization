@@ -1360,6 +1360,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         dataset_name = 'CIFAR-10'
     elif dataset_type == 'cifar100':
         dataset_name = 'CIFAR-100'
+    elif dataset_type == 'svhn':
+        dataset_name = 'SVHN'
     elif dataset_type == 'mnist':
         dataset_name = 'MNIST'
     elif dataset_type == 'synth':
@@ -1384,7 +1386,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
-        elif dataset_type in ('cifar10', 'cifar100'):
+        elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 2:
@@ -1422,7 +1424,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix = ""
         if dataset_type == 'mnist':
             filename_prefix = "M"
-        elif dataset_type in ('cifar10', 'cifar100'):
+        elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
             filename_prefix = "C"
         else:
             filename_prefix = "S"
@@ -1516,7 +1518,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 elif n_hidden_layers == 'L':
                     model = LeNet5(num_classes=1)
 
-            elif dataset_type in ('cifar10', 'cifar100'):
+            elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
                 if n_hidden_layers == 1:
                     model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
                 elif n_hidden_layers == 2:
@@ -1583,7 +1585,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             filename_prefix = ""
             if dataset_type == 'mnist':
                 filename_prefix = "M"
-            elif dataset_type in ('cifar10', 'cifar100'):
+            elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
                 filename_prefix = "C"
             else:
                 filename_prefix = "S"
@@ -1677,7 +1679,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
-        elif dataset_type in ('cifar10', 'cifar100'):
+        elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 2:
@@ -1717,7 +1719,7 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         if dataset_type == 'mnist':
             filename_prefix = "M"
         
-        elif dataset_type in ('cifar10', 'cifar100'):
+        elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
             filename_prefix = "C"
         else:
             filename_prefix = "S"

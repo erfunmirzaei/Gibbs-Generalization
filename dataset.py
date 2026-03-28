@@ -2,8 +2,9 @@
 Dataset creation module for SGLD experiments.
 
 This module contains functions and classes for creating synthetic datasets,
-MNIST binary classification datasets, and CIFAR-10 binary classification datasets
-used in the SGLD generalization bound experiments.
+MNIST binary classification datasets, CIFAR-10/CIFAR-100 binary classification
+datasets, and SVHN binary classification datasets used in the SGLD
+generalization bound experiments.
 """
 
 import numpy as np
@@ -1337,6 +1338,292 @@ def get_cifar10_binary_dataloaders_partial_random_labels(
         prefetch_factor=2 if num_workers > 0 else 2
     )
     
+    return train_loader, test_loader
+
+
+def create_svhn_binary_dataset(
+    classes=[[0], [1]],
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
+    random_seed: int = None,
+    normalize: bool = True
+) -> Tuple[TensorDataset, TensorDataset]:
+    """
+    Create a binary SVHN dataset with specified class groups.
+
+    SVHN classes are digits 0-9.
+
+    Args:
+        classes: Can be either:
+                - List of two individual classes: [0, 1]
+                - List of two class groups: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]]
+                - List of two class groups: [[0], [1]] (equivalent to [0, 1])
+        n_train_per_group: Number of training samples per group (distributed among classes in the group)
+        n_test_per_group: Number of test samples per group (distributed among classes in the group)
+        random_seed: Random seed for reproducibility
+        normalize: Whether to normalize pixel values
+
+    Returns:
+        Tuple[TensorDataset, TensorDataset]: Training and test datasets
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+
+    if len(classes) == 2 and isinstance(classes[0], int):
+        classes = [[classes[0]], [classes[1]]]
+
+    if len(classes) != 2:
+        raise ValueError("classes must contain exactly 2 groups")
+
+    group_0_classes = classes[0] if isinstance(classes[0], list) else [classes[0]]
+    group_1_classes = classes[1] if isinstance(classes[1], list) else [classes[1]]
+
+    if set(group_0_classes) & set(group_1_classes):
+        raise ValueError("Class groups cannot have overlapping classes")
+
+    if not all(0 <= cls <= 9 for cls in group_0_classes + group_1_classes):
+        raise ValueError("SVHN class ids must be between 0 and 9")
+
+    if normalize:
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.4377, 0.4438, 0.4728), (0.1980, 0.2010, 0.1970))
+        ])
+    else:
+        transform = transforms.Compose([transforms.ToTensor()])
+
+    import os
+    import shutil
+
+    data_root = './data'
+    max_retries = 3
+
+    for attempt in range(max_retries):
+        try:
+            train_svhn = torchvision.datasets.SVHN(
+                root=data_root, split='train', download=True, transform=transform
+            )
+            test_svhn = torchvision.datasets.SVHN(
+                root=data_root, split='test', download=True, transform=transform
+            )
+            _ = len(train_svhn)
+            _ = len(test_svhn)
+            break
+        except Exception as e:
+            print(f"Attempt {attempt + 1}/{max_retries}: SVHN download/loading failed: {e}")
+            if attempt < max_retries - 1:
+                svhn_path = os.path.join(data_root, 'SVHN')
+                if os.path.exists(svhn_path):
+                    print(f"Removing corrupted SVHN data at {svhn_path}")
+                    shutil.rmtree(svhn_path)
+                print("Retrying download...")
+            else:
+                raise RuntimeError(f"Failed to download SVHN data after {max_retries} attempts: {e}")
+
+    def filter_grouped_classes(dataset, group_0_classes, group_1_classes, n_per_group):
+        """Filter dataset to get samples from two class groups with binary labels."""
+        data_list = []
+        target_list = []
+
+        group_0_count = 0
+        group_1_count = 0
+
+        n_per_class_g0 = max(1, n_per_group // len(group_0_classes))
+        n_per_class_g1 = max(1, n_per_group // len(group_1_classes))
+
+        class_counts = {}
+        for cls in group_0_classes + group_1_classes:
+            class_counts[cls] = 0
+
+        for data, target in dataset:
+            if group_0_count >= n_per_group and group_1_count >= n_per_group:
+                break
+
+            if target in group_0_classes and group_0_count < n_per_group:
+                target_n_per_class = n_per_class_g0
+                if group_0_count >= n_per_group - len(group_0_classes):
+                    target_n_per_class = n_per_group
+
+                if class_counts[target] < target_n_per_class:
+                    data_list.append(data.flatten())
+                    target_list.append(0)
+                    class_counts[target] += 1
+                    group_0_count += 1
+
+            elif target in group_1_classes and group_1_count < n_per_group:
+                target_n_per_class = n_per_class_g1
+                if group_1_count >= n_per_group - len(group_1_classes):
+                    target_n_per_class = n_per_group
+
+                if class_counts[target] < target_n_per_class:
+                    data_list.append(data.flatten())
+                    target_list.append(1)
+                    class_counts[target] += 1
+                    group_1_count += 1
+
+        return torch.stack(data_list), torch.tensor(target_list, dtype=torch.float32), class_counts
+
+    train_data, train_targets, train_class_counts = filter_grouped_classes(
+        train_svhn, group_0_classes, group_1_classes, n_train_per_group
+    )
+    test_data, test_targets, test_class_counts = filter_grouped_classes(
+        test_svhn, group_0_classes, group_1_classes, n_test_per_group
+    )
+
+    if random_seed is not None:
+        train_perm = torch.randperm(len(train_data))
+        test_perm = torch.randperm(len(test_data))
+        train_data, train_targets = train_data[train_perm], train_targets[train_perm]
+        test_data, test_targets = test_data[test_perm], test_targets[test_perm]
+
+    train_dataset = TensorDataset(train_data, train_targets)
+    test_dataset = TensorDataset(test_data, test_targets)
+
+    print(f"SVHN Binary Dataset Created:")
+    print(f"  Group 0 classes: {group_0_classes} (label=0)")
+    print(f"  Group 1 classes: {group_1_classes} (label=1)")
+    print(f"  Training samples: {len(train_dataset)} ({n_train_per_group} per group)")
+    print(f"  Test samples: {len(test_dataset)} ({n_test_per_group} per group)")
+    print(f"  Input dimension: {train_data.shape[1]} (flattened 3x32x32)")
+    print(f"  Normalized: {normalize}")
+    print(f"  Train class distribution: {train_class_counts}")
+    print(f"  Test class distribution: {test_class_counts}")
+
+    return train_dataset, test_dataset
+
+
+def create_svhn_binary_dataset_partial_random_labels(
+    classes=[[0], [1]],
+    p=0.5,
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
+    random_seed: int = None,
+    normalize: bool = True
+) -> Tuple[TensorDataset, TensorDataset]:
+    """
+    Create a binary SVHN dataset with partial random labels.
+
+    Args:
+        classes: Two SVHN class ids or two groups of class ids.
+        p: Probability of replacing each label with a random binary label.
+        n_train_per_group: Number of training samples per group.
+        n_test_per_group: Number of test samples per group.
+        random_seed: Random seed for reproducibility.
+        normalize: Whether to normalize pixel values.
+
+    Returns:
+        Tuple[TensorDataset, TensorDataset]: Training and test datasets with partial random labels.
+    """
+    if random_seed is not None:
+        np.random.seed(random_seed)
+        torch.manual_seed(random_seed)
+
+    regular_train_dataset, regular_test_dataset = create_svhn_binary_dataset(
+        classes=classes,
+        n_train_per_group=n_train_per_group,
+        n_test_per_group=n_test_per_group,
+        random_seed=random_seed,
+        normalize=normalize
+    )
+
+    train_data = regular_train_dataset.tensors[0]
+    test_data = regular_test_dataset.tensors[0]
+
+    train_original_labels = regular_train_dataset.tensors[1]
+    test_original_labels = regular_test_dataset.tensors[1]
+
+    train_flip_mask = torch.rand(len(train_data)) < p
+    test_flip_mask = torch.rand(len(test_data)) < p
+
+    train_final_labels = torch.where(
+        train_flip_mask,
+        torch.randint(0, 2, train_original_labels.shape),
+        train_original_labels
+    )
+    test_final_labels = torch.where(
+        test_flip_mask,
+        torch.randint(0, 2, test_original_labels.shape),
+        test_original_labels
+    )
+
+    train_dataset_random = TensorDataset(train_data, train_final_labels)
+    test_dataset_random = TensorDataset(test_data, test_final_labels)
+
+    if len(classes) == 2 and isinstance(classes[0], int):
+        group_0_classes = [classes[0]]
+        group_1_classes = [classes[1]]
+    else:
+        group_0_classes = classes[0]
+        group_1_classes = classes[1]
+
+    print(f"SVHN Binary Dataset with RANDOM LABELS Created:")
+    print(f"  Original group 0 classes: {group_0_classes} (images only, labels randomized)")
+    print(f"  Original group 1 classes: {group_1_classes} (images only, labels randomized)")
+    print(f"  Training samples: {len(train_dataset_random)} ({n_train_per_group} per group)")
+    print(f"  Test samples: {len(test_dataset_random)} ({n_test_per_group} per group)")
+    print(f"  Input dimension: {train_data.shape[1]} (flattened 3x32x32)")
+    print(f"  Normalized: {normalize}")
+
+    return train_dataset_random, test_dataset_random
+
+
+def get_svhn_binary_dataloaders_partial_random_labels(
+    classes=[[0], [1]],
+    p=0.5,
+    n_train_per_group: int = 1000,
+    n_test_per_group: int = 500,
+    batch_size: int = 128,
+    random_seed: int = None,
+    normalize: bool = True,
+    num_workers: int = 4,
+    pin_memory: bool = True
+) -> Tuple[DataLoader, DataLoader]:
+    """
+    Create DataLoaders for SVHN binary dataset with partial random labels.
+
+    Args:
+        classes: Two SVHN class ids or two groups of class ids.
+        p: Probability of replacing each label with a random binary label.
+        n_train_per_group: Number of training samples per group.
+        n_test_per_group: Number of test samples per group.
+        batch_size: Batch size for DataLoaders.
+        random_seed: Random seed for reproducibility.
+        normalize: Whether to normalize pixel values.
+        num_workers: Number of worker processes for data loading.
+        pin_memory: Whether to pin memory for faster GPU transfer.
+
+    Returns:
+        Tuple[DataLoader, DataLoader]: Training and test DataLoaders with partial random labels.
+    """
+    train_dataset, test_dataset = create_svhn_binary_dataset_partial_random_labels(
+        classes=classes,
+        p=p,
+        n_train_per_group=n_train_per_group,
+        n_test_per_group=n_test_per_group,
+        random_seed=random_seed,
+        normalize=normalize
+    )
+
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
+    )
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=batch_size * 2,
+        shuffle=False,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        persistent_workers=num_workers > 0,
+        prefetch_factor=2 if num_workers > 0 else 2
+    )
+
     return train_loader, test_loader
 
 

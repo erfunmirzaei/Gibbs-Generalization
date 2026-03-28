@@ -13,6 +13,7 @@ from datetime import datetime
 from dataset import (get_mnist_binary_dataloaders_partial_random_labels,
                      get_cifar10_binary_dataloaders_partial_random_labels,
                      get_cifar100_binary_dataloaders_partial_random_labels,
+                     get_svhn_binary_dataloaders_partial_random_labels,
                      get_synth_dataloaders, get_synth_dataloaders_random_labels,)
 from training import run_beta_experiments
 
@@ -20,7 +21,7 @@ from training import run_beta_experiments
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
-DATASET_TYPE = 'cifar10'  # 'synth', 'mnist', 'cifar10' or 'cifar100'
+DATASET_TYPE = 'svhn'  # 'synth', 'mnist', 'cifar10', 'cifar100', or 'svhn'
 SEEDS = [42, 52]  # Random seeds for stability analysis
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
@@ -42,6 +43,12 @@ CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]  # Vehicles vs Animals
 # - Individual classes: [0, 1]
 # - Grouped classes: [[0, 1, 2, 3, 4], [50, 51, 52, 53, 54]]
 CIFAR100_CLASSES = [55, 88]  # For simplicity, we use two individual classes (apple vs aquarium_fish)
+
+# SVHN classes for binary classification (only used when DATASET_TYPE='svhn')
+# Can be either:
+# - Individual classes: [0, 1]
+# - Grouped classes: [[0, 2, 4, 6, 8], [1, 3, 5, 7, 9]] for even vs odd
+SVHN_CLASSES = [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]
 
 
 def set_global_seed(seed):
@@ -87,6 +94,16 @@ def create_dataloaders(dataset_seed):
             n_train_per_group=500,
             n_test_per_group=100,
             batch_size=1000,
+            random_seed=dataset_seed,
+        )
+
+    if DATASET_TYPE == 'svhn':
+        return get_svhn_binary_dataloaders_partial_random_labels(
+            classes=SVHN_CLASSES,
+            p=USE_RANDOM_LABELS,
+            n_train_per_group=4000,
+            n_test_per_group=10000,
+            batch_size=100,
             random_seed=dataset_seed,
         )
 
@@ -148,7 +165,7 @@ def main():
             beta_values = [256, 2000]  # Minimal set for testing
             a0 = {0: 0.01, 256:0.01, 2000: 0.01}
 
-        elif DATASET_TYPE in ('cifar10', 'cifar100'):
+        elif DATASET_TYPE in ('cifar10', 'cifar100', 'svhn'):
             beta_values = [128, 250, 500, 1000]  # Minimal set for testing
             a0 = {0: 0.01, 128: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01}
 
@@ -175,12 +192,12 @@ def main():
             #a0 = {0:0.01, 1000:0.01, 2000:0.01, 3000:0.01, 4000:0.01, 5000:0.01, 6000:0.01, 7000:0.01, 8000:0.01, 9000:0.01, 10000:0.01, 11000:0.01, 12000:0.01, 13000:0.01, 14000:0.01, 15000:0.01, 16000:0.01}
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
-        elif DATASET_TYPE in ('cifar10', 'cifar100'):
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
-            # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
+        elif DATASET_TYPE in ('cifar10', 'cifar100', 'svhn'):
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
             a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
-            # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
+            a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
         elif DATASET_TYPE == 'synth':
             beta_values = [3,6,12,25,50,100,200,400]
@@ -211,6 +228,8 @@ def main():
             selected_classes = CIFAR10_CLASSES
         elif DATASET_TYPE == 'cifar100':
             selected_classes = CIFAR100_CLASSES
+        elif DATASET_TYPE == 'svhn':
+            selected_classes = SVHN_CLASSES
         else:
             selected_classes = None
 
@@ -222,7 +241,7 @@ def main():
             sigma_gauss_prior=5.0,
             device=device,
             n_hidden_layers=2,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-            width=1000, # Width of each hidden layer, only for fully connected networks
+            width=1500, # Width of each hidden layer, only for fully connected networks
             dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
             use_random_labels=USE_RANDOM_LABELS,
             l_max=4.0,
