@@ -230,7 +230,7 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 # CONTROL ------------------------------------------------
 
 display = 1     # 0 = BBCE, 1 = 01, 2 = area between true and random
-trueLabels = 0    # 0 = random, 1 = true labels
+trueLabels = 1    # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
 calibration = 1    # 0 = no calibration 1 = do it
@@ -425,7 +425,7 @@ def show01 (showkls):
     # Enhanced formatting
     ax.set_xlabel('Beta', fontsize=18)
     ax.set_ylabel('0-1 Error', fontsize=18)
-    ax.set_ylim([0, 1])
+    ax.set_ylim([0, 0.6])
     
     # Better legend
     ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
@@ -575,14 +575,14 @@ def showarea (av_bcetrain_true, av_bcetrain_random):
      plt.show()
 
  
-betas, bcetrain, bcetest, train01, test01, av_bcetrain_random, av_bcetest,\
-        av_train01_random, av_test01, samplesize = main( randomfilename )
-betas, bcetrain, bcetest, train01, test01, av_bcetrain_true, av_bcetest,\
-        av_train01_true, av_test01_true, samplesize = main( truefilename )
 
 if display == 1:
     show01 (showkls) 
 elif display == 0:
     showbce (showkls)
 elif display == 2:
+    betas, bcetrain, bcetest, train01, test01, av_bcetrain_random, av_bcetest,\
+            av_train01_random, av_test01, samplesize = main( randomfilename )
+    betas, bcetrain, bcetest, train01, test01, av_bcetrain_true, av_bcetest,\
+            av_train01_true, av_test01_true, samplesize = main( truefilename )
     showarea (av_bcetrain_true, av_bcetrain_random)
