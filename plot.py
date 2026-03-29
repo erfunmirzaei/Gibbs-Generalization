@@ -43,7 +43,7 @@ def read_csv_2_lists(csv_file_path):
             if len(row) > 0 and row[0] == 'Summary:':
                 reached_summary = True
                 summary_string = ', '.join(row[1:])
-                print(f"Summary from CSV: {summary_string}")
+                # print(f"Summary from CSV: {summary_string}")
                 continue
             
             # Skip if we've reached the summary section or row is empty/invalid
@@ -229,11 +229,11 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, thresh=0.5):
 
 # CONTROL ------------------------------------------------
 
-display = 2       # 0 = BBCE, 1 = 01, 2 = area between true and random
-trueLabels = 1    # 0 = random, 1 = true labels
+display = 1     # 0 = BBCE, 1 = 01, 2 = area between true and random
+trueLabels = 0    # 0 = random, 1 = true labels
 boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
-calibration = 0    # 0 = no calibration 1 = do it
+calibration = 1    # 0 = no calibration 1 = do it
 singledraw = 0     # 0 = posterior average, 1 = single draw
 
 # GET DATA
@@ -251,7 +251,7 @@ singledraw = 0     # 0 = posterior average, 1 = single draw
 # CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
 # MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
 
-truefilename, randomfilename = "MCL1W500ULA2kLR001SAVAGE", "MCL1W8ULA2kLR001SAVAGE_S42_20260310-134833"
+truefilename, randomfilename = "SCL3W1000SGLD8kLR0005BBCE_S12_20260329-090028.csv", "SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
 
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
@@ -279,7 +279,6 @@ if trueLabels == 1:   # then reload
     samplesize = samplesize[0]
 
 print ('calibration factor =',factor)
-
 bounds = klbounds ( betas, av_bcetrain, samplesize, 0.01, factor)
 testkl = compute_kls (av_bcetrain,av_bcetest)
 testkl01 = compute_kls (av_train01,av_test01)
@@ -579,7 +578,7 @@ def showarea (av_bcetrain_true, av_bcetrain_random):
 betas, bcetrain, bcetest, train01, test01, av_bcetrain_random, av_bcetest,\
         av_train01_random, av_test01, samplesize = main( randomfilename )
 betas, bcetrain, bcetest, train01, test01, av_bcetrain_true, av_bcetest,\
-        av_train01_true, av_test01, samplesize = main( truefilename )
+        av_train01_true, av_test01_true, samplesize = main( truefilename )
 
 if display == 1:
     show01 (showkls) 

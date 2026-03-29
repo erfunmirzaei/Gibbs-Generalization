@@ -853,7 +853,14 @@ def run_beta_experiments(
             config_dict=config_dict,
         )
 
-        filename_prefix = "M" if dataset_type == 'mnist' else ("C" if dataset_type in ('cifar10', 'cifar100') else "S")
+        if dataset_type == 'mnist':
+            filename_prefix = "M"
+        elif dataset_type in ('cifar10', 'cifar100'):
+            filename_prefix = "C"
+        elif dataset_type == 'svhn':
+            filename_prefix = "S"
+        else:
+            filename_prefix = "X"
         filename_prefix += "R" if use_random_labels == 1 else ("C" if use_random_labels == 0 else "P")
         filename_prefix += f"L{n_hidden_layers}"
         filename_prefix += f"W{width}"

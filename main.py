@@ -9,6 +9,7 @@ import torch
 import numpy as np
 import random
 import csv
+import os
 from datetime import datetime
 from dataset import (get_mnist_binary_dataloaders_partial_random_labels,
                      get_cifar10_binary_dataloaders_partial_random_labels,
@@ -21,8 +22,30 @@ from training import run_beta_experiments
 # Configuration flags
 TEST_MODE = False  # Set to True for quick test, False for full experiment
 USE_RANDOM_LABELS = 1  # Percentage of randomly labeled data 
+_env_random_labels = os.getenv('USE_RANDOM_LABELS')
+if _env_random_labels is not None:
+    try:
+        USE_RANDOM_LABELS = int(_env_random_labels)
+    except ValueError as exc:
+        raise ValueError("USE_RANDOM_LABELS environment variable must be an integer") from exc
 DATASET_TYPE = 'svhn'  # 'synth', 'mnist', 'cifar10', 'cifar100', or 'svhn'
-SEEDS = [42, 52]  # Random seeds for stability analysis
+_env_dataset_type = os.getenv('DATASET_TYPE')
+if _env_dataset_type is not None:
+    DATASET_TYPE = _env_dataset_type.strip().lower()
+_valid_datasets = {'synth', 'mnist', 'cifar10', 'cifar100', 'svhn'}
+if DATASET_TYPE not in _valid_datasets:
+    raise ValueError(
+        f"Unsupported DATASET_TYPE: {DATASET_TYPE}. Supported: {sorted(_valid_datasets)}"
+    )
+SEEDS = [12]  # Random seeds for stability analysis
+_env_seeds = os.getenv('SEEDS')
+if _env_seeds is not None:
+    try:
+        SEEDS = [int(token.strip()) for token in _env_seeds.split(',') if token.strip()]
+    except ValueError as exc:
+        raise ValueError("SEEDS environment variable must be comma-separated integers") from exc
+    if not SEEDS:
+        raise ValueError("SEEDS environment variable must include at least one seed")
 DATASET_SEED = 42  # Seed for dataset splitting/label randomization (if applicable)
 USE_SAME_DATASET_ACROSS_SEEDS = True  # True: same dataset split/labels for all seeds
 
@@ -70,9 +93,9 @@ def create_dataloaders(dataset_seed):
         return get_mnist_binary_dataloaders_partial_random_labels(
             classes=MNIST_CLASSES,
             p=USE_RANDOM_LABELS,
-            n_train_per_group=1000,
+            n_train_per_group=4000,
             n_test_per_group=5000,
-            batch_size=2000,
+            batch_size=100,
             random_seed=dataset_seed,
             normalize=True
         )
@@ -81,9 +104,9 @@ def create_dataloaders(dataset_seed):
         return get_cifar10_binary_dataloaders_partial_random_labels(
             classes=CIFAR10_CLASSES,
             p=USE_RANDOM_LABELS,
-            n_train_per_group=1000,
+            n_train_per_group=4000,
             n_test_per_group=5000,
-            batch_size=2000,
+            batch_size=100,
             random_seed=dataset_seed,
         )
 
@@ -176,26 +199,34 @@ def main():
     else:
         if DATASET_TYPE == 'mnist':
             # beta_values = [100, 125, 160, 200, 250, 320, 400, 500]
-            beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
-            # beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             #beta_values = [1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000, 11000, 12000, 13000, 14000, 15000, 16000]  # Extended MNIST experiment, n = 2k
             # beta_values = [375, 750, 1250, 1500, 1750]
 
             # a0 = {375: 0.01, 750:0.01, 1250:0.01, 1500:0.01, 1750:0.01}
             # a0 = {0: 0.0025, 125: 0.0025, 250: 0.0025, 500: 0.0025, 1000: 0.0025, 2000: 0.0025, 4000: 0.0025, 8000: 0.0025, 16000: 0.0025} #TODO: previous best
             # a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
-            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
-            # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
             # a0 = {0: 0.001, 100:0.001, 125:0.001, 160:0.001, 200:0.001, 250:0.001, 320:0.001, 400:0.001, 500:0.001}
 
             # beta_values = [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended MNIST experiment, n = 8k
             #a0 = {0:0.01, 1000:0.01, 2000:0.01, 3000:0.01, 4000:0.01, 5000:0.01, 6000:0.01, 7000:0.01, 8000:0.01, 9000:0.01, 10000:0.01, 11000:0.01, 12000:0.01, 13000:0.01, 14000:0.01, 15000:0.01, 16000:0.01}
             # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
 
-        elif DATASET_TYPE in ('cifar10', 'cifar100', 'svhn'):
+        elif DATASET_TYPE in ('svhn'):
             # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
             beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
-            a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
+            # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
+            # a0 = {0: 0.01,500:0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01, 32000: 0.01, 64000: 0.01}
+            a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
+
+        elif DATASET_TYPE in ('cifar10', 'cifar100'):
+            # beta_values = [125, 250, 500, 1000, 2000, 4000, 8000, 16000] # n = 2k
+            beta_values =  [500, 1000, 2000, 4000, 8000, 16000, 32000, 64000]  # Extended CIFAR-10 experiment, n = 8k
+            # a0 = {0: 0.01, 125: 0.01, 250: 0.01, 500: 0.01, 1000: 0.01, 2000: 0.01, 4000: 0.01, 8000: 0.01, 16000: 0.01}
             # a0 = {0: 0.005, 125: 0.005, 250: 0.005, 500: 0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005}
             a0 = {0: 0.005,500:0.005, 1000: 0.005, 2000: 0.005, 4000: 0.005, 8000: 0.005, 16000: 0.005, 32000: 0.005, 64000: 0.005}
 
@@ -208,6 +239,16 @@ def main():
     print(f"Dataset: {DATASET_TYPE.upper()}")
     print(f"Beta values: {beta_values}")
     print(f"{'='*70}")
+
+    if DATASET_TYPE == 'mnist':
+        n_hidden_layers = 2
+        width = 1000
+    elif DATASET_TYPE == 'svhn':
+        n_hidden_layers = 3
+        width = 1000
+    else:
+        n_hidden_layers = 2
+        width = 1500
 
     seed_results = []
 
@@ -234,14 +275,14 @@ def main():
             selected_classes = None
 
         csv_paths = run_beta_experiments(
-            loss='SAVAGE', #'Savage', #'BBCE', #'BCE', #'Tangent'
+            loss='BBCE', #'Savage', #'BBCE', #'BCE', #'Tangent'
             beta_values=beta_values,
             a0=a0,  # Now supports dict, callable, or float
             b=0.5,  # This is used only if you want to schedule the step size (In the current version it is not used)
             sigma_gauss_prior=5.0,
             device=device,
-            n_hidden_layers=2,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
-            width=1500, # Width of each hidden layer, only for fully connected networks
+            n_hidden_layers=n_hidden_layers,  # 1 or 2 or 3 hidden layers, if you put 'L' it will be LeNet5 for MNIST and if you put 'V' it will be VGG16 for CIFAR10
+            width=width, # Width of each hidden layer, only for fully connected networks
             dataset_type=DATASET_TYPE,  # 'cifar10' or 'mnist'
             use_random_labels=USE_RANDOM_LABELS,
             l_max=4.0,

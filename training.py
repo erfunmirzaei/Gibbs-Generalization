@@ -1424,10 +1424,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         filename_prefix = ""
         if dataset_type == 'mnist':
             filename_prefix = "M"
-        elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
+        elif dataset_type in ('cifar10', 'cifar100'):
             filename_prefix = "C"
-        else:
+        elif dataset_type == 'svhn':
             filename_prefix = "S"
+        else:
+            filename_prefix = "X"
         
         if use_random_labels == 1:
             filename_prefix += "R"
@@ -1585,10 +1587,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             filename_prefix = ""
             if dataset_type == 'mnist':
                 filename_prefix = "M"
-            elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
+            elif dataset_type in ('cifar10', 'cifar100'):
                 filename_prefix = "C"
-            else:
+            elif dataset_type == 'svhn':
                 filename_prefix = "S"
+            else:
+                filename_prefix = "X"
             
             if use_random_labels == 1:
                 filename_prefix += "R"
@@ -1719,10 +1723,12 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         if dataset_type == 'mnist':
             filename_prefix = "M"
         
-        elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
+        elif dataset_type in ('cifar10', 'cifar100'):
             filename_prefix = "C"
-        else:
+        elif dataset_type == 'svhn':
             filename_prefix = "S"
+        else:
+            filename_prefix = "X"
         
         if use_random_labels == 1:
             filename_prefix += "R"
