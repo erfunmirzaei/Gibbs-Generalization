@@ -233,7 +233,7 @@ if __name__ == "__main__":
     # CONTROL ------------------------------------------------
 
     display = 1     # 0 = BBCE, 1 = 01, 2 = area between true and random
-    trueLabels = 0    # 0 = random, 1 = true labels
+    trueLabels = 1    # 0 = random, 1 = true labels
     boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
     showkls = 0        # 0 = don't show, 1 = show
     calibration = 1    # 0 = no calibration 1 = do it
@@ -255,7 +255,8 @@ if __name__ == "__main__":
     # MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
 
     truefilename, randomfilename = "SCL3W1000SGLD8kLR0005BBCE_S12_20260329-090028.csv", "SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
-    truefilename, randomfilename = "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE_S1_20260329-054600.csv"#"MRL2W1000SGLD8kLR001BBCE.csv"
+    # truefilename, randomfilename = "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE_S1_20260329-054600.csv"#"MRL2W1000SGLD8kLR001BBCE.csv"
+    # truefilename, randomfilename = "SCLVW1000SGLD8kLR0005BBCE_S12_20260331-075223.csv", "SRLVW1000SGLD8kLR0005BBCE_S12_20260331-054052.csv"
 
 
     # for calibration load random data first
@@ -430,7 +431,7 @@ if __name__ == "__main__":
         # Enhanced formatting
         ax.set_xlabel('Beta', fontsize=18)
         ax.set_ylabel('0-1 Error', fontsize=18)
-        ax.set_ylim([0, 0.6])
+        ax.set_ylim([0, 0.75])
     
         # Better legend
         ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
