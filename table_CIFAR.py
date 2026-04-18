@@ -100,14 +100,14 @@ def kl (p,q):
 
 
 def invert_kl ( p, kl_val ):
-              l, u, r = p, 1, 0.5
+              l, u = p, 1 - 1e-12
+              r = (l + u) / 2
               while ((u-l) > 1/100000):
                             if kl (p,r) < kl_val:
                                           l = r
-                                          r = (r+u)/2
                             else:
                                           u = r
-                                          r = (r+l)/2
+                            r = (l + u) / 2
               return r
 
 def invert_kls ( ps, kl_vals ):

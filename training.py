@@ -14,7 +14,7 @@ import random
 from datetime import datetime
 from losses import BoundedCrossEntropyLoss, ZeroOneLoss, TangentLoss, SavageLoss
 from torch.nn import BCEWithLogitsLoss
-from models import  initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
+from models import initialize_nn_weights_gaussian, FCN1L, FCN2L, FCN3L, LeNet5, CNNet4l, VGG16_CIFAR
 from sgld import SGLD
 from new_MALA import MALA, StepSizeTuner
 from statistics import mean
@@ -1386,6 +1386,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
+            elif n_hidden_layers == 'C':
+                model = CNNet4l(num_classes=1)
         elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)
@@ -1519,6 +1521,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                     model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
                 elif n_hidden_layers == 'L':
                     model = LeNet5(num_classes=1)
+                elif n_hidden_layers == 'C':
+                    model = CNNet4l(num_classes=1)
 
             elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
                 if n_hidden_layers == 1:
@@ -1683,6 +1687,8 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
                 model = FCN3L(input_dim=28*28, hidden_dim=width, output_dim=1)
             elif n_hidden_layers == 'L':
                 model = LeNet5(num_classes=1)
+            elif n_hidden_layers == 'C':
+                model = CNNet4l(num_classes=1)
         elif dataset_type in ('cifar10', 'cifar100', 'svhn'):
             if n_hidden_layers == 1:
                 model = FCN1L(input_dim=3*32*32, hidden_dim=width, output_dim=1)

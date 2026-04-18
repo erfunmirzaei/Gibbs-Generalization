@@ -228,6 +228,39 @@ class LeNet5(nn.Module):
         
         return x
 
+
+class CNNet4l(nn.Module):
+    """4-layer CNN used in the PBB baseline architecture for MNIST.
+
+    This version returns raw logits so it can be used with BCEWithLogitsLoss
+    (binary) and CrossEntropyLoss (multiclass).
+    """
+
+    def __init__(self, num_classes: int = 10, dropout_prob: float = 0.0):
+        super(CNNet4l, self).__init__()
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=0)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=0)
+        self.fc1 = nn.Linear(9216, 128)
+        self.fc2 = nn.Linear(128, num_classes)
+        self.dropout = nn.Dropout2d(dropout_prob)
+
+    def forward(self, x):
+        if x.dim() == 2:
+            x = x.view(x.size(0), 1, 28, 28)
+        elif x.dim() == 3:
+            x = x.unsqueeze(1)
+
+        x = self.dropout(self.conv1(x))
+        x = F.relu(x)
+        x = self.dropout(self.conv2(x))
+        x = F.relu(x)
+        x = F.max_pool2d(x, 2)
+        x = torch.flatten(x, 1)
+        x = self.dropout(self.fc1(x))
+        x = F.relu(x)
+        x = self.fc2(x)
+        return x
+
 class VGG16_CIFAR(nn.Module):
     """
     VGG-16 style network adapted for CIFAR-10 (32x32 RGB images).

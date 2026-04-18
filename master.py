@@ -109,6 +109,7 @@ def main():
     if torch.cuda.is_available():
         current_gpu = torch.cuda.current_device()
         device = f'cuda:{current_gpu}'
+        # device = torch.device("cuda:1")
         print(f"GPU detected and will be used: {device}")
         print(f"GPU Name: {torch.cuda.get_device_name(current_gpu)}")
         print(f"GPU Memory: {torch.cuda.get_device_properties(current_gpu).total_memory / 1e9:.1f} GB")
@@ -175,7 +176,7 @@ def main():
             b=0.5,
             sigma_gauss_prior=SGLD_SIGMA_GAUSS_PRIOR,
             device=device,
-            n_hidden_layers=3,
+            n_hidden_layers='C',
             width=600,
             dataset_type=DATASET_TYPE,
             use_random_labels=use_random_labels,

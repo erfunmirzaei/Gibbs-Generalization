@@ -38,7 +38,7 @@ from dataset import (
     get_synth_dataloaders_random_labels,
 )
 from losses import PBBBoundedNLLLoss
-from models import FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR
+from models import FCN1L, FCN2L, FCN3L, LeNet5, CNNet4l, VGG16_CIFAR
 from pbb_prior import initialize_model_with_prior
 from pbb_truncated_prior import initialize_prior_truncated_gaussian
 from sgld import SGLD
@@ -61,7 +61,7 @@ CIFAR10_CLASSES = [[0, 1, 8, 9], [2, 3, 4, 5, 6, 7]]
 CIFAR100_CLASSES = [55, 88]
 
 # Use your architecture family exactly.
-N_HIDDEN_LAYERS = 2  # 1 | 2 | 3 | 'L' for MNIST LeNet5 | 'V' for CIFAR VGG16
+N_HIDDEN_LAYERS = 2  # 1 | 2 | 3 | 'L' for MNIST LeNet5 | 'C' for MNIST CNNet4l | 'V' for CIFAR VGG16
 WIDTH = 1000
 
 # PBB objective/prior knobs.
@@ -181,6 +181,8 @@ def build_base_model(dataset_type: str, n_hidden_layers, width: int) -> nn.Modul
             return FCN3L(input_dim=28 * 28, hidden_dim=width, output_dim=1)
         if n_hidden_layers == "L":
             return LeNet5(num_classes=1)
+        if n_hidden_layers == "C":
+            return CNNet4l(num_classes=1)
 
     if dataset_type in ("cifar10", "cifar100"):
         if n_hidden_layers == 1:

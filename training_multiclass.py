@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 
 from losses import BoundedCrossEntropyLoss, MulticlassSavageLoss, ZeroOneLoss
-from models import FCN1L, FCN2L, FCN3L, LeNet5, VGG16_CIFAR, initialize_nn_weights_gaussian
+from models import FCN1L, FCN2L, FCN3L, LeNet5, CNNet4l, VGG16_CIFAR, initialize_nn_weights_gaussian
 from sgld import SGLD
 
 
@@ -194,6 +194,8 @@ def create_multiclass_model(dataset_type, n_hidden_layers, width, device, num_cl
             model = FCN3L(input_dim=28 * 28, hidden_dim=width, output_dim=num_classes)
         elif n_hidden_layers == 'L':
             model = LeNet5(num_classes=num_classes)
+        elif n_hidden_layers == 'C':
+            model = CNNet4l(num_classes=num_classes)
         else:
             raise ValueError(f"Unsupported n_hidden_layers for MNIST: {n_hidden_layers}")
     elif dataset_type in ('cifar10', 'cifar100'):
@@ -472,21 +474,46 @@ def train_sgld_model(
                 f"Elapsed={elapsed:.1f}s"
             )
 
-    # Sampling phase: fixed epochs after training completes
-    print(f"\nRunning sampling phase ({sampling_epochs} epochs)...")
-    for sampling_epoch in range(sampling_epochs):
-        model.train()
-        train_loss_total = 0.0
-        train_zero_one_total = 0.0
+    # Sampling phase: fixed epochs after training completes (posterior only, beta > 0)
+    # Reset averaging buffers so reported averages are computed only on sampling phase.
+    if beta > 0.0 and sampling_epochs > 0:
+        model = model.to(device)
+        avg_train_BCE_losses = []
+        avg_test_BCE_losses = []
+        avg_train_zero_one_losses = []
+        avg_test_zero_one_losses = []
+        avg_train_BCE_losses_sq = []
+        avg_test_BCE_losses_sq = []
 
-        for batch_x, batch_y in train_loader:
-            batch_x = batch_x.to(device, non_blocking=True)
-            batch_y = _to_class_indices(batch_y.to(device, non_blocking=True))
+        print(f"\nRunning sampling phase ({sampling_epochs} epochs)...")
+        for sampling_epoch in range(sampling_epochs):
+            current_epoch_lr = resolve_epoch_lr(
+                epoch_index=epoch + sampling_epoch,
+                base_lr=a0,
+                use_schedule=use_epoch_lr_schedule,
+                schedule_start=epoch_lr_start,
+                schedule_decrement=epoch_lr_decrement,
+                schedule_step_epochs=epoch_lr_step_epochs,
+                schedule_min=epoch_lr_min,
+            )
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = current_epoch_lr
 
-            with torch.no_grad():
+            model.train()
+            train_loss_total = 0.0
+            train_zero_one_total = 0.0
+
+            for batch_x, batch_y in train_loader:
+                batch_x = batch_x.to(device, non_blocking=True)
+                batch_y = _to_class_indices(batch_y.to(device, non_blocking=True))
+
+                optimizer.zero_grad(set_to_none=True)
                 outputs = model(batch_x)
                 loss_fn = criterion(outputs.squeeze(), batch_y)
                 zero_one_loss = zero_one_criterion(outputs, batch_y)
+
+                loss_fn.backward()
+                optimizer.step()
 
                 bce_val = loss_fn.item()
                 zero_one_val = zero_one_loss.item()
@@ -496,37 +523,44 @@ def train_sgld_model(
                 train_loss_total += bce_val
                 train_zero_one_total += zero_one_val
 
-        avg_train_loss = train_loss_total / len(train_loader)
-        avg_train_zero_one = train_zero_one_total / len(train_loader)
+            avg_train_loss = train_loss_total / len(train_loader)
+            avg_train_zero_one = train_zero_one_total / len(train_loader)
+            train_losses.append(avg_train_loss)
+            train_zero_one_losses.append(avg_train_zero_one)
+            learning_rates.append(optimizer.param_groups[0]['lr'])
 
-        model.eval()
-        test_loss_total = 0.0
-        test_zero_one_total = 0.0
+            model.eval()
+            test_loss_total = 0.0
+            test_zero_one_total = 0.0
 
-        with torch.no_grad():
-            for batch_x, batch_y in test_loader:
-                batch_x = batch_x.to(device, non_blocking=True)
-                batch_y = _to_class_indices(batch_y.to(device, non_blocking=True))
+            with torch.no_grad():
+                for batch_x, batch_y in test_loader:
+                    batch_x = batch_x.to(device, non_blocking=True)
+                    batch_y = _to_class_indices(batch_y.to(device, non_blocking=True))
 
-                outputs = model(batch_x)
-                loss_fn = criterion(outputs.squeeze(), batch_y)
-                zero_one_loss = zero_one_criterion(outputs, batch_y)
+                    outputs = model(batch_x)
+                    loss_fn = criterion(outputs.squeeze(), batch_y)
+                    zero_one_loss = zero_one_criterion(outputs, batch_y)
 
-                test_loss_item = loss_fn.item()
-                test_zero_one_item = zero_one_loss.item()
-                avg_test_BCE_losses.append(test_loss_item)
-                avg_test_BCE_losses_sq.append(test_loss_item ** 2)
-                avg_test_zero_one_losses.append(test_zero_one_item)
-                test_loss_total += test_loss_item
-                test_zero_one_total += test_zero_one_item
+                    test_loss_item = loss_fn.item()
+                    test_zero_one_item = zero_one_loss.item()
+                    avg_test_BCE_losses.append(test_loss_item)
+                    avg_test_BCE_losses_sq.append(test_loss_item ** 2)
+                    avg_test_zero_one_losses.append(test_zero_one_item)
+                    test_loss_total += test_loss_item
+                    test_zero_one_total += test_zero_one_item
 
-        avg_test_loss = test_loss_total / len(test_loader)
-        avg_test_zero_one = test_zero_one_total / len(test_loader)
+            avg_test_loss = test_loss_total / len(test_loader)
+            avg_test_zero_one = test_zero_one_total / len(test_loader)
+            test_losses.append(avg_test_loss)
+            test_zero_one_losses.append(avg_test_zero_one)
+            epoch += 1
 
-        if (sampling_epoch + 1) % 10 == 0 or sampling_epoch == 0:
-            print(f"  Sampling Epoch {sampling_epoch+1:>3}/{sampling_epochs} | "
-                  f"Train Loss={avg_train_loss:.4f} Test Loss={avg_test_loss:.4f} | "
-                  f"Train 0-1={avg_train_zero_one:.4f} Test 0-1={avg_test_zero_one:.4f}")
+            if (sampling_epoch + 1) % 10 == 0 or sampling_epoch == 0:
+                print(f"  Sampling Epoch {sampling_epoch+1:>3}/{sampling_epochs} | "
+                      f"LR={optimizer.param_groups[0]['lr']:.5f} | "
+                      f"Train Loss={avg_train_loss:.4f} Test Loss={avg_test_loss:.4f} | "
+                      f"Train 0-1={avg_train_zero_one:.4f} Test 0-1={avg_test_zero_one:.4f}")
 
     return (
         train_losses,
