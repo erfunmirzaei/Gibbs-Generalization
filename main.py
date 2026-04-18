@@ -244,7 +244,7 @@ def main():
         n_hidden_layers = 2
         width = 1000
     elif DATASET_TYPE == 'svhn':
-        n_hidden_layers = 3
+        n_hidden_layers = 'V'
         width = 1000
     else:
         n_hidden_layers = 2

@@ -1,0 +1,34 @@
+Sample_size,Beta,BCE_Train,BCE_Test,0-1_Train,0-1_Test,EMA_BCE_Train,EMA_BCE_Test,EMA_0-1_Train,EMA_0-1_Test
+8000,0.0,2.4073941707611084,1.9495199918746948,0.6000000238418579,0.48500001430511475,2.0036288677453995,2.0052612396478655,0.49858999699354173,0.49899999058246614
+8000,500,0.696414690464735,0.7387764541726364,0.500249994173646,0.48832057400753626,1.8246337541937827,1.8420949381778116,0.48143499679863455,0.4840031568753092
+8000,1000,0.6972193054854869,0.7090414680932697,0.5031249981373549,0.5100430614069889,1.3434999383091926,1.3875266413939626,0.4702649968266487,0.47534133908623144
+
+Summary:,"The LMC has been run with the following parameters:
+  - Device: cpu
+  - Loss function: BBCE
+  - l_max: 4.0
+  - Network architecture: VGG16_CIFAR
+  - Number of hidden layers: V
+  - Width of hidden layers: 1000
+  - Dataset type: svhn
+  - Dataset name: SVHN
+  - Selected classes/groups: [[0, 1, 2, 3, 4], [5, 6, 7, 8, 9]]
+  - Random labels: 0
+  - Training set size: 8000
+  - Test set size: 18976
+  - Minimum epochs: 2000
+  - Number of Batches: 80
+  - Beta values: [0.0, 500, 1000]
+  - Learning rate (a0): 0.005
+  - Learning rate decay (b): 0.5
+  - Gaussian prior sigma: 5.0
+ -  alpha_average: 0.01
+ -  alpha_stop: 0.00025
+ -  eta: 36
+ -  eps: -1e-07
+ -  Seed: 12
+ -  Gradient norm: [0.0, 38.72707154460438, 32.052748543977735]
+ -  Number of epochs per beta: [1000, 25, 25]
+ -  Variance of EMA Train BCE losses: [0.03944586649587478, 0.04461982506311868, 0.047077186507637814]
+ -  Variance of EMA Test BCE losses: [0.011980496295159071, 0.02205746661705632, 0.03724433908756475]
+"
