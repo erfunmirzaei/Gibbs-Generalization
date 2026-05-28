@@ -1,4 +1,4 @@
-# Results and data directories
+# Local datasets and downloaded corpora
 data/
 
 # Python cache files
@@ -7,9 +7,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
-
-# Documentation files
-README_csv_setup.md
 
 # Distribution / packaging
 .Python
@@ -48,6 +45,7 @@ coverage.xml
 # Environments
 .env
 .venv
+.conda/
 env/
 venv/
 ENV/
@@ -74,10 +72,33 @@ Desktop.ini
 *.tmp
 *.temp
 *.log
-*.md
+logs/
+test_checkpoints/
+table_meta_learning_CCL1W500ULA_GD1kLR001SAVAGE.xlsx.lock
+
+# Local development notes that were not part of the tracked release surface
+CHECKPOINT_AND_MAXEPOCHS_UPDATE.md
+GPU_CHECKPOINT_GUIDE.md
+IMPLEMENTATION_SUMMARY.md
+MAX_EPOCHS_QUICK_GUIDE.md
+PBB_CONFIG_EXAMPLES.md
+PBB_DOCUMENTATION_INDEX.md
+PBB_INTEGRATION_SUMMARY.md
+PBB_MODELS_README.md
+PBB_QUICKSTART.md
+QUICK_REFERENCE.md
+START_HERE.md
 
 # Model checkpoints
+*.pt
 *.pth
 *.ckpt
 *.h5
 Miniconda3-latest-Linux-x86_64.sh
+
+# Generated experiment outputs. Files already tracked by git remain tracked;
+# this prevents accidental commits from exploratory reruns.
+csv_EMA/*.csv
+newplots/*.png
+newplots/*.pdf
+newplots/*.svg

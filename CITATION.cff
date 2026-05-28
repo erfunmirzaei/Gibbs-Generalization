@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the associated ICML paper."
+title: "Gibbs Generalization Bound Experiments"
+authors:
+  - family-names: "Mirzaei"
+    given-names: "Erfan"
+license: "MIT"
+preferred-citation:
+  type: conference-paper
+  title: "Gibbs Generalization Bound Experiments"
+  authors:
+    - family-names: "Mirzaei"
+      given-names: "Erfan"
+  collection-title: "Proceedings of the International Conference on Machine Learning"
+  year: 2026

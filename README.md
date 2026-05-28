@@ -1,224 +1,108 @@
 # Gibbs Generalization Bound Experiments
 
-A comprehensive implementation of SGLD (Stochastic Gradient Langevin Dynamics) and ULA (Unadjusted Langevin Algorithm) experiments for computing PAC-Bayesian generalization bounds on MNIST, CIFAR-10, and CIFAR-100 datasets.
+Research code for PAC-Bayesian/Gibbs generalization experiments with Langevin-style samplers. The repository contains the experiment drivers, model definitions, losses, plotting scripts, PBB baselines, and selected CSV/plot artifacts used during paper development.
 
-## Project Structure
+This cleanup keeps the original script-driven workflow intact for reproducibility. Most experiment settings are still module-level constants in the entry-point scripts, so reproducing a specific run means checking the script configuration and the corresponding CSV filename.
 
-The code has been organized into the following modules for better maintainability and reusability:
+## Repository Layout
 
-### Core Modules
+- `main.py` - binary-classification experiments for MNIST, CIFAR-10, CIFAR-100, SVHN, and synthetic data.
+- `master.py` - multiclass MNIST experiment driver.
+- `training.py`, `training_multiclass.py` - training loops, SGLD/ULA orchestration, CSV export, and checkpoint hooks.
+- `dataset.py`, `multiclass_dataset_functions.py` - dataset loaders and label-randomization utilities.
+- `models.py`, `pbb_models.py` - neural network architectures.
+- `losses.py`, `sgld.py`, `mala.py`, `new_MALA.py` - losses and samplers/optimizers.
+- `plot.py`, `plot_q_bounds.py`, `table_MNIST.py`, `table_CIFAR.py` - analysis, plotting, and table generation.
+- `baselines/pbb/` - PBB baseline implementations and helper scripts.
+- `csv_EMA/` - tracked experiment CSV artifacts.
+- `newplots/` - tracked generated figures.
+- `checkpoints/` - tracked lightweight checkpoints used by existing runs.
 
-- **`dataset.py`** - Dataset creation and data loading utilities
-  - `get_mnist_binary_dataloaders()` - Creates MNIST binary classification datasets
-  - `get_cifar10_binary_dataloaders()` - Creates CIFAR-10 binary classification datasets
-  - `get_mnist_binary_dataloaders_random_labels()` - MNIST with random labels for generalization studies
-  - `get_cifar10_binary_dataloaders_random_labels()` - CIFAR-10 with random labels for generalization studies
-  - Support for both individual class pairs and grouped classes (e.g., even vs odd digits)
+Local downloaded datasets are expected under `data/`, but that directory is ignored by git.
 
-- **`models.py`** - Neural network architectures
-  - `FCN1L` - 1-layer fully connected network
-  - `FCN2L` - 2-layer fully connected network  
-  - `FCN3L` - 3-layer fully connected network
-  - `LeNet5` - LeNet-5 architecture for MNIST
-  - `VGG16_CIFAR` - VGG-16 architecture adapted for CIFAR-10
-  - `initialize_nn_weights_gaussian()` - Gaussian weight initialization for Bayesian analysis
+## Installation
 
-- **`sgld.py`** - SGLD/ULA optimizer implementation
-  - `SGLD` - Stochastic Gradient Langevin Dynamics optimizer with inverse temperature (β) control
-  - Supports both SGLD (with gradient noise) and ULA modes
-  - Configurable noise injection and step size scheduling
+Create a clean environment with either Conda:
 
-- **`losses.py`** - Loss functions for PAC-Bayesian analysis
-  - `BoundedCrossEntropyLoss` - Bounded cross-entropy loss (BBCE) 
-  - `ZeroOneLoss` - Zero-one loss for classification error evaluation  
-  - `TangentLoss` - Tangent loss implementation
-  - `SavageLoss` - Savage loss for robust learning
-
-- **`training.py`** - Training procedures and experiment orchestration
-  - `train_sgld_model()` - Train individual models with SGLD/ULA
-  - `run_beta_experiments()` - Run comprehensive experiments across multiple β values
-  - `save_moving_average_losses_to_csv()` - Export results to CSV format
-  - **Automatic Beta=0 Inclusion**: Automatically adds β=0 (pure gradient descent) for proper bound computation
-  - **Exponential Moving Average (EMA)** tracking for stable loss estimation
-
-- **`plot.py`** - Plotting and visualization utilities
-  - `create_plots_from_csv()` - Generate plots from CSV experimental results
-  - `klbounds()` - Compute KL-divergence based PAC-Bayesian bounds  
-  - `invert_kl()` - Numerical inversion of KL divergence for bound computation
-  - Support for multiple bound types (KL, Hoeffding, Bernstein)
-  - Automatic plot generation with generalization bounds vs actual test errors
-
-### Main Scripts
-
-- **`main.py`** - Main experiment script
-  - Orchestrates complete SGLD/ULA experiments on MNIST, CIFAR-10, or CIFAR-100
-  - Configurable for test mode vs full experiment
-  - Support for both normal and random label experiments
-  - Automatic dataset selection and parameter configuration
-
-- **`table_MNIST.py`** - MNIST results analysis and table generation
-  - Processes experimental results from CSV files
-  - Generates publication-ready tables 
-
-- **`table_CIFAR.py`** - CIFAR-10 results analysis and table generation  
-  - Similar functionality to table_MNIST.py but for CIFAR-10 experiments
-  - Handles CIFAR-10 specific experimental parameters
-
-- **`__init__.py`** - Package initialization
-  - Imports all main components for easy access
-  - Defines the public API with version information
-
-### Output Directories
-
-- **`csv_EMA/`** - CSV files with experimental results including EMA (Exponential Moving Average) tracking
-  - Contains loss trajectories, generalization errors, and experimental metadata
-  - Organized by experiment parameters (dataset, β values, learning rates, etc.)
-  
-- **`newplots/`** - Generated visualization outputs
-  - Loss curves, generalization bounds, and comparative analysis plots
-  - Automatic filename generation based on experimental parameters
-
-## Output Files and Naming Convention
-
-### CSV Results Format
-Experimental results are saved in `csv_EMA/` with descriptive filenames:
-
-```
-{Dataset}{Label_Type}{Network_Type}W{Width}{Algorithm}{Steps}LR{Learning_Rate}{Loss_Type}.csv
-```
-
-**Components:**
-- `{Dataset}`: M (MNIST), C (CIFAR-10)
-- `{Label_Type}`: CL (Correct Labels), RL (Random Labels) 
-- `{Network_Type}`: 1, 2, 3 (FCN layers), L (LeNet), V (VGG)
-- `{Width}`: Network width (e.g., 500, 1000, 2000)
-- `{Algorithm}`: SGLD, ULA, SGD
-- `{Steps}`: Training steps (e.g., 2k, 8k)
-- `{Learning_Rate}`: Learning rate (e.g., 0005 for 0.005)
-- `{Loss_Type}`: BBCE, SAVAGE, etc.
-
-**Example Filenames:**
-- `MCL2W1000SGLD8kLR001BBCE.csv` - MNIST, Correct Labels, 2-layer FCN, width 1000, SGLD, 8k steps, lr=0.01, BBCE loss
-- `CRL3W500ULA2kLR0005SAVAGE.csv` - CIFAR-10, Random Labels, 3-layer FCN, width 500, ULA, 2k steps, lr=0.005, Savage loss
-
-### CSV File Structure
-Each CSV contains per-iteration results:
-- Sample size, Beta value, iteration number
-- Training/test losses (BCE and 0-1 error)
-- Exponential Moving Averages (EMA) of all metrics
-- Timestamp and experimental metadata
-
-### Plot Outputs
-Generated plots are saved in `newplots/` with corresponding names:
-- `{ExperimentName}_01.png` - Generalization error (0-1 loss) plots with bounds
-- `{ExperimentName}_loss.png` - Loss trajectory plots
-- `{ExperimentName}_KL.png` - KL-divergence bound visualizations
-
-## Usage
-
-### Quick Start
 ```bash
-# Run the main experiment (configured in main.py)
+conda env create -f environment.yml
+conda activate gibbs-generalization
+```
+
+or pip:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+For GPU runs, install the PyTorch build that matches your CUDA version if the default package resolver does not pick it automatically.
+
+## Quick Smoke Test
+
+Before launching a full run, set `TEST_MODE = True` in the relevant entry-point script and run:
+
+```bash
 python main.py
 ```
 
-### Stability Analysis Across Random Seeds
-You can now run multiple seeds in one execution from [main.py](main.py):
+The scripts create `csv_EMA/` and `newplots/` outputs as needed. Existing tracked artifacts are preserved; new exploratory outputs are ignored by default to avoid accidental large commits.
 
-- Set `SEEDS = [42, 52, 62]` (or any list of seeds).
-- Set `USE_SAME_DATASET_ACROSS_SEEDS = True` to keep dataset fixed and vary only training randomness.
-- Set `USE_SAME_DATASET_ACROSS_SEEDS = False` to vary both dataset and training randomness.
+## Running Experiments
 
-Outputs:
-- Per-seed experiment CSV files in `csv_EMA/` (filenames include `_S{seed}`)
-- One stability index file: `csv_EMA/SEED_STABILITY_<DATASET>_<timestamp>.csv`
+Binary experiments are configured in `main.py`:
 
-## Algorithm and Parameter Guide
-
-### Beta (β) Parameter - Inverse Temperature
-- **β = 0**: Sampling from the prior 
-- **β > 0**: SGLD with decreasing noise as β increases
-- **Higher β**: Less exploration, more exploitation (approaches deterministic optimization)
-- **Lower β**: More exploration, better generalization (at cost of training accuracy)
-
-### Supported Algorithms
-- **SGLD**: Stochastic Gradient Langevin Dynamics with Gaussian noise injection
-- **ULA**: Unadjusted Langevin Algorithm (Using full gradient instead of mini-batches)
-- **SGD**: Standard Stochastic Gradient Descent 
-
-### Loss Functions for PAC-Bayesian Analysis
-- **BBCE (Bounded Binary Cross Entropy)**: Primary loss for generalization bounds [0,1] bounded
-- **Savage Loss**: Robust alternative with different theoretical properties
-- **Tangent Loss**: Additional robust loss option
-
-
-## Installation and Dependencies
-
-### Required Dependencies
 ```bash
-pip install torch torchvision numpy matplotlib csv
+DATASET_TYPE=mnist USE_RANDOM_LABELS=0 SEEDS=42 python main.py
+DATASET_TYPE=mnist USE_RANDOM_LABELS=1 SEEDS=42 python main.py
 ```
 
-### Optional Dependencies
-For extended analysis:
+Multiclass MNIST experiments are configured in `master.py`:
+
 ```bash
-pip install pandas seaborn scipy
+USE_RANDOM_LABELS=0 python master.py
+USE_RANDOM_LABELS=1 python master.py
 ```
 
-### Conda Environment (Recommended)
-```bash
-conda create -n gibbs-gen python=3.8
-conda activate gibbs-gen
-conda install pytorch torchvision numpy matplotlib
+The shell helpers `run_true_and_random.sh`, `run_master_both_labels.sh`, and `run_cifar10_random_seeds_*.sh` capture common runs. Check the Conda environment name inside each script before using it on a new machine.
+
+## Outputs
+
+CSV files are named with experiment metadata:
+
+```text
+{Dataset}{LabelType}{NetworkType}W{Width}{Algorithm}{Steps}LR{LearningRate}{LossType}.csv
 ```
 
-## References and Theoretical Background
+Examples:
 
-This implementation is based on the following key papers:
+- `MCL2W1000SGLD8kLR001BBCE.csv` - MNIST, correct labels, 2-layer FCN, width 1000, SGLD, 8k steps, learning rate 0.01, BBCE loss.
+- `CRL2W1500SGLD8kLR0005BBCE.csv` - CIFAR-style binary setup, random labels, 2-layer FCN, width 1500, SGLD, 8k steps, learning rate 0.0005, BBCE loss.
 
-1. **SGLD Algorithm**: Welling, M., & Teh, Y. W. (2011). Bayesian learning via stochastic gradient Langevin dynamics. *Proceedings of the 28th International Conference on Machine Learning (ICML-11)*, 681-688.
+Plotting and table scripts consume files in `csv_EMA/` and write figures to `newplots/`.
 
-## File Organization and Reproducibility
+## Reproducibility Notes
 
-### Systematic File Naming
-All outputs use consistent naming conventions encoding:
-- Dataset type and label configuration
-- Network architecture and parameters  
-- Optimization algorithm and hyperparameters
-- Loss function and experimental settings
-
-### Reproducibility Features
-- **Fixed Random Seeds**: Consistent dataset generation across runs
-- **Parameter Tracking**: All hyperparameters saved in CSV metadata
-- **Version Control Ready**: Organized structure for git tracking
-- **Automated Outputs**: No manual file management required
-
-### Result Verification
-Use `table_MNIST.py` and `table_CIFAR.py` and `plot.py` to:
-- Load and validate experimental results
-- Generate publication-ready tables  
-- Create comparative visualizations
-- Verify bound computation accuracy
-
-## Contributing
-
-This research code is provided for reproducibility and further research. When using or extending this code:
-
-1. **Cite the relevant papers** listed in the References section
-2. **Maintain the modular structure** for easier maintenance and extension
-3. **Follow the naming conventions** for consistency with existing outputs
-4. **Test with `TEST_MODE=True`** before running full experiments
-5. **Document any modifications** for reproducibility
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- Seeds are set through script-level `SEEDS` and `DATASET_SEED` values. Some scripts also accept environment overrides such as `SEEDS`, `DATASET_TYPE`, and `USE_RANDOM_LABELS`.
+- CUDA determinism is enabled where seeds are set, but exact GPU reproducibility can still depend on hardware, driver, CUDA, and PyTorch versions.
+- Torchvision datasets are downloaded locally into `data/` and are not committed.
+- Full experiments can be expensive. Use `TEST_MODE = True` first to verify installation and paths.
+- The repository intentionally avoids a broad package refactor in order to keep paths, filenames, and experiment behavior close to the accepted-paper version.
 
 ## Citation
 
-If you use this code in your research, please cite our work:
+If this repository supports your work, please cite the associated ICML paper. Replace this placeholder with the official proceedings citation once available.
 
-TBD - Add citation details here when available.
-## Contact
+```bibtex
+@inproceedings{mirzaei2026gibbs,
+  title     = {Gibbs Generalization Bound Experiments},
+  author    = {Mirzaei, Erfan and collaborators},
+  booktitle = {Proceedings of the International Conference on Machine Learning},
+  year      = {2026}
+}
+```
 
-For questions about the implementation or to report issues, please open an issue in the repository.
+## License
+
+This project is released under the MIT License. See `LICENSE` for details.
