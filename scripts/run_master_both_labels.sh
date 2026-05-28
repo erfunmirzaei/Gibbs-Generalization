@@ -2,7 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$REPO_DIR"
 
 # Ensure conda is available in non-interactive shells, then activate the requested env.
 if ! command -v conda >/dev/null 2>&1; then

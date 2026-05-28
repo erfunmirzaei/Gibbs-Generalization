@@ -7,5 +7,6 @@ Use this checklist before switching the GitHub repository to public.
 - Confirm that no local datasets, private paths, API keys, or machine-specific Conda environments are tracked.
 - Run a smoke test with `TEST_MODE = True` for `main.py` and `master.py`.
 - Regenerate at least one representative plot from a tracked CSV.
+- Check whether the optional PBB baseline artifacts in `csv_EMA/` should stay in the public repository.
 - Tag the release commit, for example `v1.0-icml`.
 - Add paper-to-artifact mapping notes if reviewers/readers need to reproduce specific figures or tables.

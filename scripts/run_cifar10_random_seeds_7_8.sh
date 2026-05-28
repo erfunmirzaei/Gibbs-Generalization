@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
 source "$(conda info --base)/etc/profile.d/conda.sh"

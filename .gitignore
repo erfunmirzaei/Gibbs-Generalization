@@ -76,19 +76,6 @@ logs/
 test_checkpoints/
 table_meta_learning_CCL1W500ULA_GD1kLR001SAVAGE.xlsx.lock
 
-# Local development notes that were not part of the tracked release surface
-CHECKPOINT_AND_MAXEPOCHS_UPDATE.md
-GPU_CHECKPOINT_GUIDE.md
-IMPLEMENTATION_SUMMARY.md
-MAX_EPOCHS_QUICK_GUIDE.md
-PBB_CONFIG_EXAMPLES.md
-PBB_DOCUMENTATION_INDEX.md
-PBB_INTEGRATION_SUMMARY.md
-PBB_MODELS_README.md
-PBB_QUICKSTART.md
-QUICK_REFERENCE.md
-START_HERE.md
-
 # Model checkpoints
 *.pt
 *.pth
