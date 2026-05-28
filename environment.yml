@@ -10,5 +10,4 @@ dependencies:
   - numpy>=1.21
   - matplotlib>=3.4
   - openpyxl>=3.1
-  - tqdm>=4.0
   - pip

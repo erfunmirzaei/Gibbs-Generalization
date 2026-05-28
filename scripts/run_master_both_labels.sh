@@ -18,7 +18,7 @@ if ! command -v conda >/dev/null 2>&1; then
 fi
 
 eval "$(conda shell.bash hook)"
-conda activate gibbs
+conda activate "${CONDA_ENV_NAME:-gibbs-generalization}"
 
 echo "Using Python: $(python -V 2>&1)"
 

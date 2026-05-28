@@ -230,7 +230,7 @@ class LeNet5(nn.Module):
 
 
 class CNNet4l(nn.Module):
-    """4-layer CNN used in the PBB baseline architecture for MNIST.
+    """4-layer CNN for MNIST-style image inputs.
 
     This version returns raw logits so it can be used with BCEWithLogitsLoss
     (binary) and CrossEntropyLoss (multiclass).

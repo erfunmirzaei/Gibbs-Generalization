@@ -29,7 +29,6 @@ Datasets are loaded through `torchvision` and stored locally under `data/`. The 
 
 - `main.py` runs binary experiments.
 - `master.py` runs multiclass MNIST experiments.
-- `baselines/pbb/run_pbb_*.py` run PBB baselines.
 - `plot.py`, `plot_q_bounds.py`, `table_MNIST.py`, and `table_CIFAR.py` regenerate analysis artifacts from CSV files.
 - `scripts/` contains shell helpers for common runs.
 

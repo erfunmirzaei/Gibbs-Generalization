@@ -4,13 +4,14 @@ This repository contains the code used for the ICML paper experiments on Gibbs/P
 
 The code is intentionally still script-based. The main goal of this public version is to keep the experiments reproducible without doing a large refactor that might change behavior.
 
+The core Python files are kept at the repository root on purpose. Moving them into a package would require changing many imports and would add unnecessary risk for the release version.
+
 ## What To Run
 
 - `main.py` runs the binary experiments for MNIST, CIFAR-10, CIFAR-100, SVHN, and synthetic data.
 - `master.py` runs the 10-class MNIST experiments.
 - `plot.py`, `plot_q_bounds.py`, `table_MNIST.py`, and `table_CIFAR.py` regenerate plots and tables from saved CSV files.
-- `baselines/pbb/` contains the PBB baseline code.
-- `scripts/` contains a few shell helpers for common runs.
+- `scripts/run_master_both_labels.sh` is kept as an example shell helper.
 
 Most experiment settings are near the top of `main.py` and `master.py`.
 
@@ -73,7 +74,6 @@ USE_RANDOM_LABELS=1 python master.py
 - `csv_EMA/`: saved CSV results.
 - `newplots/`: saved plots.
 - `checkpoints/`: lightweight checkpoints from existing runs.
-- `notebooks/`: optional notebooks.
 
 Downloaded datasets live under `data/`, which is ignored by git.
 
@@ -88,11 +88,11 @@ New generated CSVs, plots, logs, and checkpoints are ignored by default. Existin
 Please cite the associated ICML paper if you use this code. The exact proceedings citation should replace this placeholder once available:
 
 ```bibtex
-@inproceedings{mirzaei2026gibbs,
-  title     = {Gibbs Generalization Bounds},
-  author    = {Mirzaei, Erfan and collaborators},
-  booktitle = {Proceedings of the International Conference on Machine Learning},
-  year      = {2026}
+@article{maurer2025generalization,
+  title={Generalization of Gibbs and Langevin Monte Carlo Algorithms in the Interpolation Regime},
+  author={Maurer, Andreas and Mirzaei, Erfan and Pontil, Massimiliano},
+  journal={arXiv preprint arXiv:2510.06028},
+  year={2025}
 }
 ```
 
