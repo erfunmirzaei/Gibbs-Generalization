@@ -233,13 +233,29 @@ def calibrate (betas, av_bcetrain, av_train01, samplesize, delta, thresh=None):
 
 display = 1     # 0 = BBCE, 1 = 01, 2 = area between true and random
 trueLabels = 1    # 0 = random, 1 = true labels
-boundtype = 0      # 0 = kl 1 = Hoeffding 2 = Bernstein
+boundtype = 0     # 0 = kl 1 = Hoeffding 2 = Bernstein
 showkls = 0        # 0 = don't show, 1 = show
-calibration = 0    # 0 = no calibration 1 = do it
+calibration = 1    # 0 = no calibration 1 = do it
 singledraw = 0     # 0 = posterior average, 1 = single draw
-NUM_CLASSES = 10
+NUM_CLASSES = 2
 CHANCE_LEVEL_ERROR = 1 - 1 / NUM_CLASSES
 DELTA = 0.01       # Confidence parameter used in KL/Hoeffding bounds
+
+# PLOT_FONT_SIZES = {
+#     'base': 24,
+#     'label': 36,
+#     'title': 36,
+#     'tick': 24,
+#     'legend': 24,
+# }
+
+PLOT_FONT_SIZES = {
+    'base': 18,
+    'label': 22,
+    'title': 24,
+    'tick': 18,
+    'legend': 18,
+}
 
 # GET DATA
 # naming conventions: 
@@ -256,13 +272,15 @@ DELTA = 0.01       # Confidence parameter used in KL/Hoeffding bounds
 # CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
 # MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
 
-truefilename, randomfilename = "SCL3W1000SGLD8kLR0005BBCE_S12_20260329-090028.csv", "SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
+# truefilename, randomfilename = "SCL3W1000SGLD8kLR0005BBCE_S12_20260329-090028.csv", "SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
 # truefilename, randomfilename = "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE_S1_20260329-054600.csv"#"MRL2W1000SGLD8kLR001BBCE.csv"
 # truefilename, randomfilename = "SCLVW1000SGLD8kLR0005BBCE_S12_20260331-075223.csv", "SRLVW1000SGLD8kLR0005BBCE_S12_20260331-054052.csv"
+# truefilename, randomfilename = "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE.csv"
+truefilename, randomfilename = "CCL2W1500SGLD8kLR0005BBCE.csv", "CRL2W1500SGLD8kLR0005BBCE.csv"
 
-truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260330-231758.csv" , "MRLCW600SGLD59kLR001BBCE_S42_20260331-112228.csv" #"SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
-truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260331-001337.csv", "MRLCW600SGLD59kLR001BBCE_S42_20260331-121808.csv"
-truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260330-222202.csv", "MRLCW600SGLD59kLR001BBCE_S42_20260331-102644.csv"
+# truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260330-231758.csv" , "MRLCW600SGLD59kLR001BBCE_S42_20260331-112228.csv" #"SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
+# truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260331-001337.csv", "MRLCW600SGLD59kLR001BBCE_S42_20260331-121808.csv"
+# truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260330-222202.csv", "MRLCW600SGLD59kLR001BBCE_S42_20260331-102644.csv"
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
         av_train01, av_test01, samplesize = main( randomfilename )
@@ -276,7 +294,6 @@ if boundtype == 1:
     bt = ' Hoeffding'
 
 print (betas)
-
 if calibration == 1:
     factor = calibrate (betas, av_bcetrain, av_train01, samplesize, DELTA, thresh=CHANCE_LEVEL_ERROR)
 else:
@@ -303,12 +320,12 @@ if boundtype == 0:
         
 def showbce (showkls):
     plt.rcParams.update({
-        'font.size': 14,           # Base font size
-        'axes.labelsize': 16,      # x and y labels
-        'axes.titlesize': 18,      # Title size
-        'xtick.labelsize': 14,     # x tick labels
-        'ytick.labelsize': 14,     # y tick labels
-        'legend.fontsize': 14,     # Legend font size
+        'font.size': PLOT_FONT_SIZES['base'],
+        'axes.labelsize': PLOT_FONT_SIZES['label'],
+        'axes.titlesize': PLOT_FONT_SIZES['title'],
+        'xtick.labelsize': PLOT_FONT_SIZES['tick'],
+        'ytick.labelsize': PLOT_FONT_SIZES['tick'],
+        'legend.fontsize': PLOT_FONT_SIZES['legend'],
         'lines.linewidth': 2.5,    # Line width
         'lines.markersize': 8,     # Marker size
         'figure.figsize': (10, 7), # Figure size for better aspect ratio
@@ -343,8 +360,8 @@ def showbce (showkls):
                 markersize=6, label='KL-Bound', alpha=0.8)
     
     # Enhanced formatting
-    ax.set_xlabel('Beta', fontsize=18)
-    ax.set_ylabel('Loss', fontsize=18)
+    ax.set_xlabel('Beta')
+    ax.set_ylabel('Loss')
     ax.set_ylim(0, 2)
     
     # Better legend
@@ -392,12 +409,12 @@ def showbce (showkls):
     
 def show01 (showkls):
     plt.rcParams.update({
-        'font.size': 14,           # Base font size
-        'axes.labelsize': 16,      # x and y labels
-        'axes.titlesize': 18,      # Title size
-        'xtick.labelsize': 14,     # x tick labels
-        'ytick.labelsize': 14,     # y tick labels
-        'legend.fontsize': 14,     # Legend font size
+        'font.size': PLOT_FONT_SIZES['base'],
+        'axes.labelsize': PLOT_FONT_SIZES['label'],
+        'axes.titlesize': PLOT_FONT_SIZES['title'],
+        'xtick.labelsize': PLOT_FONT_SIZES['tick'],
+        'ytick.labelsize': PLOT_FONT_SIZES['tick'],
+        'legend.fontsize': PLOT_FONT_SIZES['legend'],
         'lines.linewidth': 2.5,    # Line width
         'lines.markersize': 8,     # Marker size
         'figure.figsize': (10, 7), # Figure size for better aspect ratio
@@ -434,8 +451,8 @@ def show01 (showkls):
 
     
     # Enhanced formatting
-    ax.set_xlabel('Beta', fontsize=18)
-    ax.set_ylabel('0-1 Error', fontsize=18)
+    ax.set_xlabel('Beta')
+    ax.set_ylabel('0-1 Error')
     ax.set_ylim([0, 1])
     
     # Better legend
@@ -496,6 +513,14 @@ def showarea (av_bcetrain_true, av_bcetrain_random):
      
      # Set hatch properties before creating figure
      mpl.rcParams['hatch.linewidth'] = 1.5
+     plt.rcParams.update({
+        'font.size': PLOT_FONT_SIZES['base'],
+        'axes.labelsize': PLOT_FONT_SIZES['label'],
+        'axes.titlesize': PLOT_FONT_SIZES['title'],
+        'xtick.labelsize': PLOT_FONT_SIZES['tick'],
+        'ytick.labelsize': PLOT_FONT_SIZES['tick'],
+        'legend.fontsize': PLOT_FONT_SIZES['legend'],
+     })
      
      fig, ax = plt.subplots(figsize=(10, 7))
      
@@ -520,21 +545,21 @@ def showarea (av_bcetrain_true, av_bcetrain_random):
      # Label "A" in the gray area (below true labels curve)
      A_x = betas[label_idx]
      A_y = av_bcetrain_true[label_idx] * 0.3
-    #  ax.text(A_x, A_y, r'$\mathcal{A}$', fontsize=22, fontweight='bold', 
+    #  ax.text(A_x, A_y, r'$\mathcal{A}$', fontsize=PLOT_FONT_SIZES['label'], fontweight='bold', 
     #          ha='center', va='center', color='black')
      
      # Label "A'" between the two curves (in the hatched region)
      label_idx = len(betas) // 2
      Aprime_x = betas[label_idx]
      Aprime_y = (av_bcetrain_true[label_idx] + av_bcetrain_random[label_idx]) / 2.5
-    #  ax.text(Aprime_x, Aprime_y, r"$\mathcal{A}'$", fontsize=22, fontweight='bold', 
+    #  ax.text(Aprime_x, Aprime_y, r"$\mathcal{A}'$", fontsize=PLOT_FONT_SIZES['label'], fontweight='bold', 
     #          ha='center', va='center', color='black')
      
      ax.spines['top'].set_visible(False)
      ax.spines['right'].set_visible(False)
-     ax.set_xlabel('inverse temperature', fontsize=18)
-     ax.set_ylabel('mean training loss', fontsize=16)
-     ax.legend(loc='upper right', fontsize=12, framealpha=0.9)
+     ax.set_xlabel('inverse temperature')
+     ax.set_ylabel('mean training loss')
+     ax.legend(loc='upper right', framealpha=0.9)
      ax.set_xlim([0, 8010])
      ax.set_ylim([0, 0.55])
 
