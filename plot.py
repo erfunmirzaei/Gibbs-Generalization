@@ -83,11 +83,6 @@ def main(csv_filename):
 
     return beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples
 
-
-# XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-
-
-
 import math
 import matplotlib.pyplot as plt
 import numpy as np
@@ -148,15 +143,6 @@ def minlist (l):
     for x in l:
         m = min (m,x)
     return m
-
-# compute integral
-# def integral2 ( betas, train, factor ):
-# 	u, s, index = [0], 0, 0
-# 	while ( len (u) < len ( betas ) ):
-# 		s = s + factor*(betas[index+1]-betas[index])*train[index+1] +  factor*(betas[index+1]-betas[index])*abs(train[index] - train[index+1])/2
-# 		u.append(s)
-# 		index = index + 1
-# 	return u
 
 def integral ( betas, train, factor ):
 	u, s, index = [0], 0, 0
@@ -257,30 +243,8 @@ PLOT_FONT_SIZES = {
     'legend': 18,
 }
 
-# GET DATA
-# naming conventions: 
-# ( Dataset ) = M for MNIST, C for CIFAR
-# ( C or R ) = correct or random labels
-# ( L# ) = number of hidden layers.
-# ( W# ) = width of hidden layers
-# ( LMC method )  ULA, SGLD
-# ( #k  ) = Samplesize in 1000's
-# ( LR# ) learning rate where 001 = 0.01 etc
-# ( loss fctn ) BBCE, Savage
-
-# MNIST, 1Layer, Sgld, 2k, 001, Savage:‌MCL1W500SGLD2kLR001SAVAGE 
-# CIFAR, 2Layers, ULA, 2k, 001, Savage:CCL2W1000ULA2kLR001SAVAGE
-# MNIST, 2Layers, Sgld, 2k, 0005, BBCE:‌MCL2W1000SGLD2kLR0005BBCE
-
-# truefilename, randomfilename = "SCL3W1000SGLD8kLR0005BBCE_S12_20260329-090028.csv", "SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
-# truefilename, randomfilename = "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE_S1_20260329-054600.csv"#"MRL2W1000SGLD8kLR001BBCE.csv"
-# truefilename, randomfilename = "SCLVW1000SGLD8kLR0005BBCE_S12_20260331-075223.csv", "SRLVW1000SGLD8kLR0005BBCE_S12_20260331-054052.csv"
-# truefilename, randomfilename = "MCL2W1000SGLD8kLR001BBCE.csv", "MRL2W1000SGLD8kLR001BBCE.csv"
 truefilename, randomfilename = "CCL2W1500SGLD8kLR0005BBCE.csv", "CRL2W1500SGLD8kLR0005BBCE.csv"
 
-# truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260330-231758.csv" , "MRLCW600SGLD59kLR001BBCE_S42_20260331-112228.csv" #"SRL3W1000SGLD8kLR0005BBCE_S12_20260329-101341.csv"
-# truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260331-001337.csv", "MRLCW600SGLD59kLR001BBCE_S42_20260331-121808.csv"
-# truefilename, randomfilename = "MCLCW600SGLD59kLR001BBCE_S42_20260330-222202.csv", "MRLCW600SGLD59kLR001BBCE_S42_20260331-102644.csv"
 # for calibration load random data first
 betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
         av_train01, av_test01, samplesize = main( randomfilename )

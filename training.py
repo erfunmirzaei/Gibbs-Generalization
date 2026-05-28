@@ -349,7 +349,6 @@ def train_sgld_model(loss, model, train_loader, test_loader, min_steps,
             # grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), float("inf"), norm_type=2).item()
             # EMA_grad_norm.append(EMA_alpha_BCE * grad_norm + (1 - EMA_alpha_BCE) * EMA_grad_norm[-1])
             
-            # TODO: Use the other approach to update EMA and check the difference
             try:
                 EMA_train_losses.append( (EMA_alpha/2) * bce_val + (EMA_alpha/2) * loss_fn.item() + (1 - EMA_alpha) * EMA_train_losses[-1])
             except:
@@ -1569,10 +1568,11 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
             EMA_train_BCE_losses, EMA_test_BCE_losses, EMA_train_01_losses, EMA_test_01_losses,
             EMA_train_BCE_losses_sq, EMA_test_BCE_losses_sq, EMA_grad_norm, epoch) = training_results
 
-            list_train_BCE_losses.append(train_losses[-50])
-            list_test_BCE_losses.append(test_losses[-50])
-            list_train_01_losses.append(train_01_losses[-50])
-            list_test_01_losses.append(test_01_losses[-50])
+            summary_index = -50 if len(train_losses) >= 50 else -1
+            list_train_BCE_losses.append(train_losses[summary_index])
+            list_test_BCE_losses.append(test_losses[summary_index])
+            list_train_01_losses.append(train_01_losses[summary_index])
+            list_test_01_losses.append(test_01_losses[summary_index])
             list_EMA_train_BCE_losses.append(mean(EMA_train_BCE_losses))
             list_EMA_test_BCE_losses.append(mean(EMA_test_BCE_losses))
             list_EMA_train_01_losses.append(mean(EMA_train_01_losses))
@@ -1804,5 +1804,3 @@ def run_beta_experiments(loss, beta_values, a0, b, sigma_gauss_prior, device,n_h
         print(f"\n✅ Annealed SGLD completed! Results saved to: {csv_path}")
 
     return saved_csv_paths
-
-

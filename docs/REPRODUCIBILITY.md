@@ -64,6 +64,6 @@ DATASET_TYPE=mnist USE_RANDOM_LABELS=0 SEEDS=42,52 python main.py
 
 ## Artifact Policy
 
-The checked-in `csv_EMA/`, `newplots/`, and `checkpoints/` files are preserved as paper-development artifacts. New generated CSV, plot, log, and checkpoint files are ignored by default so exploratory reruns do not accidentally enter the public history.
+Generated CSV, plot, log, and checkpoint files are ignored by default so exploratory reruns do not accidentally enter the public history.
 
 For a camera-ready or archival release, consider tagging the exact commit used for the paper and adding a small table that maps each paper figure/table to the CSV files used to generate it.

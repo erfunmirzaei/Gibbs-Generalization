@@ -77,15 +77,13 @@ test_checkpoints/
 table_meta_learning_CCL1W500ULA_GD1kLR001SAVAGE.xlsx.lock
 
 # Model checkpoints
+checkpoints/
 *.pt
 *.pth
 *.ckpt
 *.h5
 Miniconda3-latest-Linux-x86_64.sh
 
-# Generated experiment outputs. Files already tracked by git remain tracked;
-# this prevents accidental commits from exploratory reruns.
-csv_EMA/*.csv
-newplots/*.png
-newplots/*.pdf
-newplots/*.svg
+# Generated experiment outputs
+csv_EMA/
+newplots/

@@ -64,6 +64,23 @@ USE_RANDOM_LABELS=0 python master.py
 USE_RANDOM_LABELS=1 python master.py
 ```
 
+## Main Experiment Configurations
+
+The main CSV names encode the configuration:
+
+```text
+{Dataset}{Labels}L{Layers}W{Width}{Sampler}{SampleSize}LR{LearningRate}{Loss}
+```
+
+For the main experiments used in the paper:
+
+| CSV pair | Dataset | Labels | Model | Sampler | Train size | Learning rate | Loss |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `MCL2W1000SGLD8kLR001BBCE.csv` / `MRL2W1000SGLD8kLR001BBCE.csv` | MNIST binary | correct / random | 2 hidden layers, width 1000 | SGLD | 8k | 0.01 | BBCE |
+| `CCL2W1500SGLD8kLR0005BBCE.csv` / `CRL2W1500SGLD8kLR0005BBCE.csv` | CIFAR-10 binary | correct / random | 2 hidden layers, width 1500 | SGLD | 8k | 0.005 | BBCE |
+
+Here `M` means MNIST, `C` means CIFAR, `CL` means correct labels, and `RL` means random labels.
+
 ## Files And Outputs
 
 - `dataset.py`, `multiclass_dataset_functions.py`: dataset loading and label randomization.
@@ -71,17 +88,15 @@ USE_RANDOM_LABELS=1 python master.py
 - `losses.py`: bounded losses and evaluation losses.
 - `sgld.py`, `mala.py`, `new_MALA.py`: samplers/optimizers.
 - `training.py`, `training_multiclass.py`: training loops and CSV export.
-- `csv_EMA/`: saved CSV results.
-- `newplots/`: saved plots.
-- `checkpoints/`: lightweight checkpoints from existing runs.
 
 Downloaded datasets live under `data/`, which is ignored by git.
+Generated CSVs, plots, and checkpoints are written to `csv_EMA/`, `newplots/`, and `checkpoints/`; these folders are ignored by git.
 
 ## Reproducibility
 
 Seeds are set in the scripts through `SEEDS` and `DATASET_SEED`. CUDA determinism is enabled where seeds are set, but exact GPU reproducibility can still depend on hardware, drivers, CUDA, and PyTorch versions.
 
-New generated CSVs, plots, logs, and checkpoints are ignored by default. Existing tracked artifacts are kept so the public repository still contains the saved results used during development.
+Generated CSVs, plots, logs, and checkpoints are ignored by default. The public repository keeps the code and documentation lightweight; regenerate result artifacts locally when needed.
 
 ## Citation
 
