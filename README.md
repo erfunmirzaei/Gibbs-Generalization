@@ -1,10 +1,10 @@
 # Gibbs Generalization Bounds
 
-This repository contains the code used for the ICML paper experiments on Gibbs/PAC-Bayesian generalization bounds with Langevin-style sampling.
+This repository contains the code used for the paper, "Generalization of Gibbs and Langevin Monte Carlo Algorithms in the Interpolation Regime" by Andreas Maurer, Erfan Mirzaei, and Massimiliano Pontil. The paper is available on arXiv at https://arxiv.org/abs/2510.06028. The main focus of the paper is on generalization bounds for Gibbs and Langevin Monte Carlo algorithms in the interpolation regime, where the model can fit the training data perfectly. The experiments in the paper demonstrate the theoretical results and provide insights into the behavior of these algorithms under different conditions. 
 
-The code is intentionally still script-based. The main goal of this public version is to keep the experiments reproducible without doing a large refactor that might change behavior.
+The main goal of this public version is to keep the experiments reproducible. For any questions or collaboration suggestions, please reach out to [erfunmirzaei@gmail.com](mailto:erfunmirzaei@gmail.com).
 
-The core Python files are kept at the repository root on purpose. Moving them into a package would require changing many imports and would add unnecessary risk for the release version.
+<!-- The core Python files are kept at the repository root on purpose. Moving them into a package would require changing many imports and would add unnecessary risk for the release version. -->
 
 ## What To Run
 
