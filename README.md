@@ -94,9 +94,7 @@ Generated CSVs, plots, and checkpoints are written to `csv_EMA/`, `newplots/`, a
 
 ## Reproducibility
 
-Seeds are set in the scripts through `SEEDS` and `DATASET_SEED`. CUDA determinism is enabled where seeds are set, but exact GPU reproducibility can still depend on hardware, drivers, CUDA, and PyTorch versions.
-
-Generated CSVs, plots, logs, and checkpoints are ignored by default. The public repository keeps the code and documentation lightweight; regenerate result artifacts locally when needed.
+Seeds are set in the scripts through `SEEDS` and `DATASET_SEED`. CUDA determinism is enabled where seeds are set, but exact GPU reproducibility can still depend on hardware, drivers, CUDA, and PyTorch versions. Generated CSVs, plots, logs, and checkpoints are ignored by default. 
 
 ## Citation
 
