@@ -1,0 +1,13 @@
+name: gibbs-generalization
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch>=1.9
+  - torchvision>=0.10
+  - numpy>=1.21
+  - matplotlib>=3.4
+  - openpyxl>=3.1
+  - pip

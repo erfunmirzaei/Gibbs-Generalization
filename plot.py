@@ -1,0 +1,588 @@
+import csv
+import os
+import numpy as np
+
+def read_csv_2_lists(csv_file_path):
+    """
+    Read CSV file and return data organized by beta.
+    
+    Args:
+        csv_file_path: Path to the CSV file
+    Returns:
+        list 
+    """     
+    if not os.path.exists(csv_file_path):
+        raise FileNotFoundError(f"CSV file not found: {csv_file_path}")
+    
+    # Initialize data structure
+    n_samples = []
+    beta_values = []
+    list_train_BCE_losses = []
+    list_test_BCE_losses = []
+    list_train_01_losses = []
+    list_test_01_losses = []
+    list_EMA_train_BCE_losses = []
+    list_EMA_test_BCE_losses = []
+    list_EMA_train_01_losses = []
+    list_EMA_test_01_losses = []
+    with open(csv_file_path, 'r') as f:
+        reader = csv.reader(f)
+        headers = next(reader)
+        n_samples_idx = headers.index("Sample_size")
+        beta_idx = headers.index("Beta")
+        train_BCE_idx = headers.index("BCE_Train")
+        test_BCE_idx = headers.index("BCE_Test")
+        train_01_idx = headers.index("0-1_Train")
+        test_01_idx = headers.index("0-1_Test")
+        EMA_train_BCE_idx = headers.index("EMA_BCE_Train")
+        EMA_test_BCE_idx = headers.index("EMA_BCE_Test")
+        EMA_train_01_idx = headers.index("EMA_0-1_Train")
+        EMA_test_01_idx = headers.index("EMA_0-1_Test")
+        reached_summary = False
+        for row in reader:
+            if len(row) > 0 and row[0] == 'Summary:':
+                reached_summary = True
+                summary_string = ', '.join(row[1:])
+                # print(f"Summary from CSV: {summary_string}")
+                continue
+            
+            # Skip if we've reached the summary section or row is empty/invalid
+            if reached_summary or len(row) < 2:
+                continue
+                
+            # Try to parse the row as data - skip if it fails
+            try:
+                n_samples.append(int(row[n_samples_idx])) 
+                beta_values.append(float(row[beta_idx]))
+                list_train_BCE_losses.append(float(row[train_BCE_idx]))
+                list_test_BCE_losses.append(float(row[test_BCE_idx]))
+                list_train_01_losses.append(float(row[train_01_idx]))
+                list_test_01_losses.append(float(row[test_01_idx]))
+                list_EMA_train_BCE_losses.append(float(row[EMA_train_BCE_idx]))
+                list_EMA_test_BCE_losses.append(float(row[EMA_test_BCE_idx]))
+                list_EMA_train_01_losses.append(float(row[EMA_train_01_idx]))
+                list_EMA_test_01_losses.append(float(row[EMA_test_01_idx]))
+            except (ValueError, IndexError):
+                # Skip rows that can't be parsed as data
+                continue
+    print(f"   Loaded {len(beta_values)} rows")
+    return beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses, list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples
+
+
+
+def main(csv_filename):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    if not csv_filename.endswith(".csv"):
+        csv_filename = f"{csv_filename}.csv"
+
+    csv_path = os.path.join(script_dir, "csv_EMA", csv_filename)
+    # Read the CSV files
+    beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,\
+    list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples = read_csv_2_lists(csv_path)
+
+    return beta_values, list_train_BCE_losses, list_test_BCE_losses, list_train_01_losses, list_test_01_losses,list_EMA_train_BCE_losses, list_EMA_test_BCE_losses, list_EMA_train_01_losses, list_EMA_test_01_losses, n_samples
+
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+
+#Standard functions
+def ln (x):
+    y = math.log(x)
+    return y
+
+# relative entropy of Bernoulli variables
+def kl (p,q):
+    if p == 0:
+        y = ln(1/(1-q))
+    else:
+        y = p*ln(p/q)+(1-p)*ln((1-p)/(1-q))
+    return y
+
+
+def invert_kl ( p, kl_val ):
+              l, u = p, 1 - 1e-12
+              r = (l + u) / 2
+              while ((u-l) > 1/100000):
+                            if kl (p,r) < kl_val:
+                                          l = r
+                            else:
+                                          u = r
+                            r = (l + u) / 2
+              return r
+
+def invert_kls ( ps, kl_vals ):
+	rs = []
+	index = 0
+	while len ( rs ) < len ( ps ):
+		rs.append ( invert_kl ( ps[index],kl_vals[index] ) )
+		index = index + 1
+	return rs
+
+# compute kl between lists
+def compute_kls (ps, qs):
+    rs = []
+    index = 0
+    while len ( rs ) < len ( ps ):
+        if (qs[index]<1):
+            rs.append ( kl ( ps[index],qs[index] ) )
+        else:
+            rs.append ( 0 )
+        index = index + 1
+    return rs
+
+def maxlist (l):
+    m = l[0]
+    for x in l:
+        m = max (m,x)
+    return m
+
+def minlist (l):
+    m = l[0]
+    for x in l:
+        m = min (m,x)
+    return m
+
+def integral ( betas, train, factor ):
+	u, s, index = [0], 0, 0
+	while ( len (u) < len ( betas ) ):
+		s = s + factor*(betas[index+1]-betas[index])*train[index]
+		u.append(s)
+		index = index + 1
+	return u
+
+def gammas ( betas, train, factor ):
+	int = integral ( betas, train, factor ) 
+	index = 0
+	b = []
+	while ( len(b) < len(train) ):
+		b.append (int[index] - factor*betas[index]*train[index]) 
+		index = index + 1
+	return b
+
+def klbounds ( betas, train, samplesize, delta, factor ):
+	g = gammas (betas, train, factor )
+	index = 0
+	b = []
+	while ( len(b) < len(train) ):
+		b.append ((g[index] + ln(2*math.sqrt(samplesize)/delta))/samplesize)
+		index = index + 1
+	return b
+
+def predictbce (betas, av_bcetrain, samplesize, factor, delta):
+    bounds = klbounds ( betas, av_bcetrain, samplesize, delta, factor)
+    index = 0
+    ps = [] 
+    while index < len ( bounds ): 
+        ps.append ( invert_kl (av_bcetrain[index],bounds[index]) ) 
+        index = index + 1 
+    return ps
+
+def predict01 (betas, av_bcetrain, av_train01, samplesize, factor, delta):
+    bounds = klbounds ( betas, av_bcetrain, samplesize, delta, factor )
+    index = 0
+    ps = [] 
+    while index < len ( bounds ): 
+        ps.append ( invert_kl (av_train01[index],bounds[index]) ) 
+        index = index + 1
+        ps[0]=CHANCE_LEVEL_ERROR
+    return ps
+
+def predict01hoeffding (betas, av_bcetrain, av_train01, samplesize, factor, delta):
+    g = gammas (betas, av_bcetrain, factor )
+    index = 0
+    ps = [] 
+    while index < len ( g ): 
+        ps.append ( av_train01[index] + math.sqrt((g[index]*( 1 + 1/samplesize) 
+                                     + ln(max(g[index],1)*(samplesize+1)/delta))/(2*samplesize) )) 
+        index = index + 1 
+    return ps
+
+def calibrate (betas, av_bcetrain, av_train01, samplesize, delta, thresh=None):
+    if thresh is None:
+        thresh = CHANCE_LEVEL_ERROR
+    l,r = 0.1,100
+    factor = (l + r) / 2
+    pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor, delta)
+    while (r-l > 0.01) or (minlist(pred) < CHANCE_LEVEL_ERROR):
+        if minlist (pred[1:])  < thresh:
+            l = factor
+        if minlist (pred[1:]) >= thresh:
+            r = factor
+        factor = (l + r) / 2
+        pred = predict01 (betas, av_bcetrain, av_train01, samplesize, factor, delta)
+    return factor
+
+
+# CONTROL ------------------------------------------------
+
+display = 1     # 0 = BBCE, 1 = 01, 2 = area between true and random
+trueLabels = 1    # 0 = random, 1 = true labels
+boundtype = 0     # 0 = kl 1 = Hoeffding 2 = Bernstein
+showkls = 0        # 0 = don't show, 1 = show
+calibration = 1    # 0 = no calibration 1 = do it
+singledraw = 0     # 0 = posterior average, 1 = single draw
+NUM_CLASSES = 2
+CHANCE_LEVEL_ERROR = 1 - 1 / NUM_CLASSES
+DELTA = 0.01       # Confidence parameter used in KL/Hoeffding bounds
+
+# PLOT_FONT_SIZES = {
+#     'base': 24,
+#     'label': 36,
+#     'title': 36,
+#     'tick': 24,
+#     'legend': 24,
+# }
+
+PLOT_FONT_SIZES = {
+    'base': 18,
+    'label': 22,
+    'title': 24,
+    'tick': 18,
+    'legend': 18,
+}
+
+truefilename, randomfilename = "CCL2W1500SGLD8kLR0005BBCE.csv", "CRL2W1500SGLD8kLR0005BBCE.csv"
+
+# for calibration load random data first
+betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
+        av_train01, av_test01, samplesize = main( randomfilename )
+samplesize = samplesize[0]
+title = 'random labels '
+print  (samplesize)      
+
+if boundtype == 0: 
+    bt = ' kl'
+if boundtype == 1:
+    bt = ' Hoeffding'
+
+print (betas)
+if calibration == 1:
+    factor = calibrate (betas, av_bcetrain, av_train01, samplesize, DELTA, thresh=CHANCE_LEVEL_ERROR)
+else:
+    factor = 1#4 + math.log(1-math.exp(-4)) #In the old files using BBCE loss, we normalized the loss values so we need this factor
+
+if trueLabels == 1:   # then reload 
+    betas, bcetrain, bcetest, train01, test01, av_bcetrain, av_bcetest,\
+        av_train01, av_test01, samplesize = main( truefilename ) 
+    title = 'true labels '
+    samplesize = samplesize[0]
+
+print ('calibration factor =',factor)
+bounds = klbounds ( betas, av_bcetrain, samplesize, DELTA, factor)
+testkl = compute_kls (av_bcetrain,av_bcetest)
+testkl01 = compute_kls (av_train01,av_test01)
+predbce = predictbce (betas, av_bcetrain, samplesize, factor, DELTA)
+if boundtype == 1: 
+    pred01 = predict01hoeffding (betas, av_bcetrain, av_train01, samplesize, factor, DELTA)
+if boundtype == 0:
+    if singledraw == 1:
+        pred01 = predict01 (betas, av_bcetrain, train01, samplesize, factor, DELTA)
+    else:
+        pred01 = predict01 (betas, av_bcetrain, av_train01, samplesize, factor, DELTA)
+        
+def showbce (showkls):
+    plt.rcParams.update({
+        'font.size': PLOT_FONT_SIZES['base'],
+        'axes.labelsize': PLOT_FONT_SIZES['label'],
+        'axes.titlesize': PLOT_FONT_SIZES['title'],
+        'xtick.labelsize': PLOT_FONT_SIZES['tick'],
+        'ytick.labelsize': PLOT_FONT_SIZES['tick'],
+        'legend.fontsize': PLOT_FONT_SIZES['legend'],
+        'lines.linewidth': 2.5,    # Line width
+        'lines.markersize': 8,     # Marker size
+        'figure.figsize': (10, 7), # Figure size for better aspect ratio
+        'axes.grid': False,         # Enable grid
+        'grid.alpha': 0.3,         # Grid transparency
+        'axes.axisbelow': True     # Put grid behind data
+    })
+    
+    fig, ax = plt.subplots()
+    ax.semilogx()
+    
+    # Enhanced plotting with original colors and enhanced markers
+    if singledraw == 1:
+        ax.plot(betas[1:], bcetrain[1:], 'o-k', linewidth=2.5, 
+                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], predbce[1:], 's-r', linewidth=2.5, 
+                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], bcetest[1:], '^-b', linewidth=2.5, 
+                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
+    else:
+        ax.plot(betas[1:], av_bcetrain[1:], 'o-k', linewidth=2.5, 
+                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], predbce[1:], 's-r', linewidth=2.5, 
+                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], av_bcetest[1:], '^-b', linewidth=2.5, 
+                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
+
+    if showkls == 1:
+        ax.plot(betas[1:], testkl[1:], 'v-g', linewidth=2, 
+                markersize=6, label='KL(Train,Test)', alpha=0.8)
+        ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
+                markersize=6, label='KL-Bound', alpha=0.8)
+    
+    # Enhanced formatting
+    ax.set_xlabel('Beta')
+    ax.set_ylabel('Loss')
+    ax.set_ylim(0, 2)
+    
+    # Better legend
+    ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
+              framealpha=0.9, edgecolor='black')
+    
+    # Add minor ticks for better readability
+    ax.minorticks_on()
+    ax.tick_params(which='minor', length=3, color='gray')
+    ax.tick_params(which='major', length=6, width=1.2)
+    
+    # Ensure directory exists
+    os.makedirs('newplots', exist_ok=True)
+    
+    # Generate filename
+    if trueLabels == 1:
+        csv_filename = truefilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        else:
+            csv_filename = csv_filename + '_loss'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+    else:
+        csv_filename = randomfilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        else:
+            csv_filename = csv_filename + '_loss'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+
+    # Save with high quality
+    plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    
+    plt.tight_layout()
+    plt.show()
+    
+def show01 (showkls):
+    plt.rcParams.update({
+        'font.size': PLOT_FONT_SIZES['base'],
+        'axes.labelsize': PLOT_FONT_SIZES['label'],
+        'axes.titlesize': PLOT_FONT_SIZES['title'],
+        'xtick.labelsize': PLOT_FONT_SIZES['tick'],
+        'ytick.labelsize': PLOT_FONT_SIZES['tick'],
+        'legend.fontsize': PLOT_FONT_SIZES['legend'],
+        'lines.linewidth': 2.5,    # Line width
+        'lines.markersize': 8,     # Marker size
+        'figure.figsize': (10, 7), # Figure size for better aspect ratio
+        'axes.grid': False,         # Enable grid
+        'grid.alpha': 0.3,         # Grid transparency
+        'axes.axisbelow': True     # Put grid behind data
+    })
+    
+    fig, ax = plt.subplots()
+    ax.semilogx()
+    
+    # Enhanced plotting with original colors and enhanced markers
+    if singledraw == 1:
+        ax.plot(betas[1:], train01[1:], 'o-k', linewidth=2.5, 
+                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], pred01[1:], 's-r', linewidth=2.5, 
+                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], test01[1:], '^-b', linewidth=2.5, 
+                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
+    else:
+        ax.plot(betas[1:], av_train01[1:], 'o-k', linewidth=2.5, 
+                markersize=8, label='Train Error', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], pred01[1:], 's-r', linewidth=2.5, 
+                markersize=7, label='Test Bound', markerfacecolor='white', markeredgewidth=2)
+        ax.plot(betas[1:], av_test01[1:], '^-b', linewidth=2.5, 
+                markersize=8, label='Test Error', markerfacecolor='white', markeredgewidth=2)
+        print("Test Bounds:", pred01)
+
+    if showkls == 1:
+        ax.plot(betas[1:], testkl01[1:], 'v-g', linewidth=2, 
+                markersize=6, label='KL(Train,Test)', alpha=0.8)
+        ax.plot(betas[1:], bounds[1:], 'D-y', linewidth=2, 
+                markersize=6, label='KL-Bound', alpha=0.8)
+
+    
+    # Enhanced formatting
+    ax.set_xlabel('Beta')
+    ax.set_ylabel('0-1 Error')
+    ax.set_ylim([0, 1])
+    
+    # Better legend
+    ax.legend(frameon=True, fancybox=False, shadow=False, loc='best', 
+              framealpha=0.9, edgecolor='black')
+    
+    # Add minor ticks for better readability
+    ax.minorticks_on()
+    ax.tick_params(which='minor', length=3, color='gray')
+    ax.tick_params(which='major', length=6, width=1.2)
+    
+    # Ensure directory exists
+    os.makedirs('newplots', exist_ok=True)
+    
+    # Generate filename
+    if trueLabels == 1:
+        csv_filename = truefilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        elif display == 0:
+            csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        if calibration == 0:
+            csv_filename = csv_filename + '_nocal'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+    else:
+        csv_filename = randomfilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        elif display == 0:
+            csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        if calibration == 0:
+            csv_filename = csv_filename + '_nocal'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+
+
+    # Save with high quality
+    plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    
+    plt.tight_layout()
+    plt.show()
+
+def showarea (av_bcetrain_true, av_bcetrain_random):
+     from matplotlib.patches import Polygon
+     import matplotlib as mpl
+     
+     # Set hatch properties before creating figure
+     mpl.rcParams['hatch.linewidth'] = 1.5
+     plt.rcParams.update({
+        'font.size': PLOT_FONT_SIZES['base'],
+        'axes.labelsize': PLOT_FONT_SIZES['label'],
+        'axes.titlesize': PLOT_FONT_SIZES['title'],
+        'xtick.labelsize': PLOT_FONT_SIZES['tick'],
+        'ytick.labelsize': PLOT_FONT_SIZES['tick'],
+        'legend.fontsize': PLOT_FONT_SIZES['legend'],
+     })
+     
+     fig, ax = plt.subplots(figsize=(10, 7))
+     
+     # Area A' (full random curve): Draw hatched area FIRST (from 0 to random curve)
+     # This covers the entire area under the random labels curve
+     verts_random = [(betas[0], 0)] + list(zip(betas, av_bcetrain_random)) + [(betas[-1], 0)]
+     poly_random = Polygon(verts_random, facecolor='white', edgecolor='black', 
+                    hatch='////', linewidth=0, label=r"Area $\mathcal{\bar{A}}$ (random labels)")
+     ax.add_patch(poly_random)
+     
+     # Area A: Draw gray area SECOND with transparency so hatching shows through
+     ax.fill_between(betas, 0, av_bcetrain_true, color='gray', alpha=0.7,
+                     label=r"Area $\mathcal{A}$ (true labels)")
+     
+     # Plot the curves on top with clear lines
+     ax.plot(betas, av_bcetrain_true, '-', color='black', linewidth=2.5, label='Mean training loss for True labels')
+     ax.plot(betas, av_bcetrain_random, '--', color='black', linewidth=2.5, label='Mean training loss for Random labels')
+     
+     # Find good positions for labels
+     label_idx = len(betas) // 4
+     
+     # Label "A" in the gray area (below true labels curve)
+     A_x = betas[label_idx]
+     A_y = av_bcetrain_true[label_idx] * 0.3
+    #  ax.text(A_x, A_y, r'$\mathcal{A}$', fontsize=PLOT_FONT_SIZES['label'], fontweight='bold', 
+    #          ha='center', va='center', color='black')
+     
+     # Label "A'" between the two curves (in the hatched region)
+     label_idx = len(betas) // 2
+     Aprime_x = betas[label_idx]
+     Aprime_y = (av_bcetrain_true[label_idx] + av_bcetrain_random[label_idx]) / 2.5
+    #  ax.text(Aprime_x, Aprime_y, r"$\mathcal{A}'$", fontsize=PLOT_FONT_SIZES['label'], fontweight='bold', 
+    #          ha='center', va='center', color='black')
+     
+     ax.spines['top'].set_visible(False)
+     ax.spines['right'].set_visible(False)
+     ax.set_xlabel('inverse temperature')
+     ax.set_ylabel('mean training loss')
+     ax.legend(loc='upper right', framealpha=0.9)
+     ax.set_xlim([0, 8010])
+     ax.set_ylim([0, 0.55])
+
+    # Add minor ticks for better readability
+     ax.minorticks_on()
+     ax.tick_params(which='minor', length=3, color='gray')
+     ax.tick_params(which='major', length=6, width=1.2)
+    
+    # Ensure directory exists
+     os.makedirs('newplots', exist_ok=True)
+    
+    # Generate filename
+     if trueLabels == 1:
+        csv_filename = truefilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        elif display == 0:
+            csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        if calibration == 0:
+            csv_filename = csv_filename + '_nocal'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+     else:
+        csv_filename = randomfilename[:-4]
+        if display == 1:
+            csv_filename = csv_filename + '_01'
+        elif display == 0:
+            csv_filename = csv_filename + '_loss'
+        else:
+            csv_filename = csv_filename + '_area'
+        if singledraw == 1:
+            csv_filename = csv_filename + '_singledraw'
+        if showkls == 1:
+            csv_filename = csv_filename + '_KL'
+        if calibration == 0:
+            csv_filename = csv_filename + '_nocal'
+        csv_filename = 'newplots/' + csv_filename + '.png'
+    
+    # Save with high quality
+     plt.savefig(csv_filename, dpi=300, bbox_inches='tight', 
+                facecolor='white', edgecolor='none')
+    
+     plt.tight_layout()
+     plt.show()
+
+ 
+
+if display == 1:
+    show01 (showkls) 
+elif display == 0:
+    showbce (showkls)
+elif display == 2:
+    betas, bcetrain, bcetest, train01, test01, av_bcetrain_random, av_bcetest,\
+            av_train01_random, av_test01, samplesize = main( randomfilename )
+    betas, bcetrain, bcetest, train01, test01, av_bcetrain_true, av_bcetest,\
+            av_train01_true, av_test01_true, samplesize = main( truefilename )
+    showarea (av_bcetrain_true, av_bcetrain_random)
