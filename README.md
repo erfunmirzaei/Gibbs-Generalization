@@ -98,14 +98,16 @@ Seeds are set in the scripts through `SEEDS` and `DATASET_SEED`. CUDA determinis
 
 ## Citation
 
-Please cite the associated ICML paper if you use this code. The exact proceedings citation should replace this placeholder once available:
+Please cite the associated ICML 2026 paper if you use this code:
 
 ```bibtex
-@article{maurer2025generalization,
+@inproceedings{maurer2026generalization,
   title={Generalization of Gibbs and Langevin Monte Carlo Algorithms in the Interpolation Regime},
   author={Maurer, Andreas and Mirzaei, Erfan and Pontil, Massimiliano},
-  journal={arXiv preprint arXiv:2510.06028},
-  year={2025}
+  booktitle={Proceedings of the 43rd International Conference on Machine Learning (ICML)},
+  year={2026},
+  eprint={2510.06028},
+  archivePrefix={arXiv}
 }
 ```
 
